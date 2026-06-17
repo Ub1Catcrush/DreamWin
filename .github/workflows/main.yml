@@ -1,0 +1,72 @@
+name: Build, Package and Upload C# App in Releases
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    name: Build and Release .NET App
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0' # Change to your .NET version (e.g., '9.0')
+
+      # Parse version from your .csproj file
+      - name: Extract Version from csproj
+        id: get_version
+        shell: powershell
+        run: |
+          # Finds the first .csproj file in the repository
+          $csproj = Get-ChildItem -Recurse -Filter *.csproj | Select-Object -First 1
+          
+          # Read the Version tag or default to 1.0.0
+          [xml]$xml = Get-Content $csproj.FullName
+          $version = $xml.Project.PropertyGroup.Version
+          if (-not $version) { $version = "1.0.0" }
+          
+          echo "VERSION_NAME=$version" >> $env:GITHUB_ENV
+          echo "VERSION_TAG=v$version" >> $env:GITHUB_ENV
+          Write-Host "Extracted Version: $version"
+
+      # Build Debug Configuration
+      - name: Build Debug
+        run: dotnet publish -c Debug -r win-x64 --self-contained false -o ./build/debug
+
+      # Build Release Configuration
+      - name: Build Release
+        run: dotnet publish -c Release -r win-x64 --self-contained false -o ./build/release
+
+      # Create Installer using Inno Setup (built into windows-latest runner)
+      - name: Compile Installer with Inno Setup
+        shell: powershell
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion="${{ env.VERSION_NAME }}" installer.iss
+
+      # Upload Build Artifacts to GitHub Actions summary (Optional)
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-builds
+          path: |
+            ./build/debug/
+            ./installer/Output/*.exe
+
+      # Create Release and Upload Installer/Executables
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.VERSION_TAG }}
+          name: Release ${{ env.VERSION_TAG }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          files: |
+            ./installer/Output/DreamWinSetup.exe
