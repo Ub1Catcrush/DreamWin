@@ -19,18 +19,21 @@ jobs:
         with:
           dotnet-version: '8.0' # Change to your .NET version (e.g., '9.0')
 
-      # Parse version from your .csproj file
-      - name: Extract Version from csproj
+      # Parse variables from version.properties
+      - name: Extract Version from properties file
         id: get_version
         shell: powershell
         run: |
-          # Finds the first .csproj file in the repository
-          $csproj = Get-ChildItem -Recurse -Filter *.csproj | Select-Object -First 1
+          # Read the raw string from version.properties
+          $content = Get-Content version.properties -Raw
           
-          # Read the Version tag or default to 1.0.0
-          [xml]$xml = Get-Content $csproj.FullName
-          $version = $xml.Project.PropertyGroup.Version
-          if (-not $version) { $version = "1.0.0" }
+          # Use regex to match numbers following major, minor, and patch keys
+          $major = if ($content -match 'versionMajor:\s*(\d+)') { $Matches[1] } else { "0" }
+          $minor = if ($content -match 'versionMinor:\s*(\d+)') { $Matches[1] } else { "0" }
+          $patch = if ($content -match 'versionPatch:\s*(\d+)') { $Matches[1] } else { "0" }
+          
+          # Combine into a standard semantic version string
+          $version = "$major.$minor.$patch"
           
           echo "VERSION_NAME=$version" >> $env:GITHUB_ENV
           echo "VERSION_TAG=v$version" >> $env:GITHUB_ENV
@@ -38,13 +41,13 @@ jobs:
 
       # Build Debug Configuration
       - name: Build Debug
-        run: dotnet publish -c Debug -r win-x64 --self-contained false -o ./build/debug
+        run: dotnet publish -c Debug -r win-x64 --self-contained false /p:Version=${{ env.VERSION_NAME }} -o ./build/debug
 
-      # Build Release Configuration
+      # Build Release Configuration (Injects version into the output EXE metadata)
       - name: Build Release
-        run: dotnet publish -c Release -r win-x64 --self-contained false -o ./build/release
+        run: dotnet publish -c Release -r win-x64 --self-contained false /p:Version=${{ env.VERSION_NAME }} -o ./build/release
 
-      # Create Installer using Inno Setup (built into windows-latest runner)
+      # Create Installer using Inno Setup (Passes version to installer script)
       - name: Compile Installer with Inno Setup
         shell: powershell
         run: |
