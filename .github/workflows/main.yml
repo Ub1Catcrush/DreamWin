@@ -1,0 +1,75 @@
+name: Build, Package and Upload C# App in Releases
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    name: Build and Release .NET App
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0' # Change to your .NET version (e.g., '9.0')
+
+      # Parse variables from version.properties
+      - name: Extract Version from properties file
+        id: get_version
+        shell: powershell
+        run: |
+          # Read the raw string from version.properties
+          $content = Get-Content version.properties -Raw
+          
+          # Use regex to match numbers following major, minor, and patch keys
+          $major = if ($content -match 'versionMajor:\s*(\d+)') { $Matches[1] } else { "0" }
+          $minor = if ($content -match 'versionMinor:\s*(\d+)') { $Matches[1] } else { "0" }
+          $patch = if ($content -match 'versionPatch:\s*(\d+)') { $Matches[1] } else { "0" }
+          
+          # Combine into a standard semantic version string
+          $version = "$major.$minor.$patch"
+          
+          echo "VERSION_NAME=$version" >> $env:GITHUB_ENV
+          echo "VERSION_TAG=v$version" >> $env:GITHUB_ENV
+          Write-Host "Extracted Version: $version"
+
+      # Build Debug Configuration
+      - name: Build Debug
+        run: dotnet publish -c Debug -r win-x64 --self-contained false /p:Version=${{ env.VERSION_NAME }} -o ./build/debug
+
+      # Build Release Configuration (Injects version into the output EXE metadata)
+      - name: Build Release
+        run: dotnet publish -c Release -r win-x64 --self-contained false /p:Version=${{ env.VERSION_NAME }} -o ./build/release
+
+      # Create Installer using Inno Setup (Passes version to installer script)
+      - name: Compile Installer with Inno Setup
+        shell: powershell
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion="${{ env.VERSION_NAME }}" installer.iss
+
+      # Upload Build Artifacts to GitHub Actions summary (Optional)
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-builds
+          path: |
+            ./build/debug/
+            ./installer/Output/*.exe
+
+      # Create Release and Upload Installer/Executables
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.VERSION_TAG }}
+          name: Release ${{ env.VERSION_TAG }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          files: |
+            ./installer/Output/DreamWinSetup.exe
