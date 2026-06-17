@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DreamWin.Models;
@@ -18,6 +19,9 @@ public partial class MainViewModel : BaseViewModel
     [ObservableProperty] private string _connectionStatus = "Not connected";
     [ObservableProperty] private bool _isConnected;
     [ObservableProperty] private string _windowTitle = "DreamWin";
+    [ObservableProperty] private string _updateStatus = "Checking for updates...";
+    [ObservableProperty] private bool _updateAvailable = false;
+    [ObservableProperty] private GitHubRelease? _latestRelease;
 
     public ObservableCollection<ReceiverConfig> Receivers { get; } = [];
 
@@ -43,6 +47,17 @@ public partial class MainViewModel : BaseViewModel
         settingsService.ActiveReceiverChanged += (_, r) => _ = ConnectAsync(r);
 
         LiveTV.StreamRequested += (_, url) => { };
+
+        // Setup update service event subscriptions
+        App.UpdateService.UpdateProgressChanged += (_, msg) =>
+        {
+            UpdateStatus = msg;
+        };
+
+        App.UpdateService.UpdateError += (_, msg) =>
+        {
+            UpdateStatus = $"Error: {msg}";
+        };
     }
 
     public async Task InitializeAsync()
@@ -50,6 +65,20 @@ public partial class MainViewModel : BaseViewModel
         var receiver = _settingsService.GetActiveReceiver();
         if (receiver != null)
             await ConnectAsync(receiver);
+
+        // Check for updates on startup if enabled and enough time has passed
+        if (_settingsService.Settings.CheckForUpdates)
+        {
+            var lastCheck = _settingsService.Settings.LastUpdateCheckTime;
+            var timeSinceLastCheck = DateTime.Now - lastCheck;
+
+            // Only check if it's been more than 1 day since last check
+            if (timeSinceLastCheck.TotalHours > 24)
+            {
+                // Run check in background, don't block initialization
+                _ = CheckForUpdatesAsync();
+            }
+        }
     }
 
     [RelayCommand]
@@ -97,6 +126,65 @@ public partial class MainViewModel : BaseViewModel
     private async Task StandbyAsync()
     {
         await Api.PowerAsync(5);
+    }
+
+    [RelayCommand]
+    public async Task CheckForUpdatesAsync()
+    {
+        await RunAsync(async () =>
+        {
+            var release = await App.UpdateService.CheckForUpdatesAsync(
+                App.SettingsService.Settings.IncludePrereleases);
+
+            if (release != null)
+            {
+                LatestRelease = release;
+                UpdateAvailable = true;
+                UpdateStatus = $"Update available: {release.Name}";
+                App.SettingsService.Settings.LastUpdateCheckTime = DateTime.Now;
+                App.SettingsService.Settings.Save();
+            }
+            else
+            {
+                UpdateAvailable = false;
+                UpdateStatus = "Already up to date";
+                App.SettingsService.Settings.LastUpdateCheckTime = DateTime.Now;
+                App.SettingsService.Settings.Save();
+            }
+        }, "Checking for updates");
+    }
+
+    [RelayCommand]
+    public async Task InstallUpdateAsync()
+    {
+        if (LatestRelease == null)
+            return;
+
+        await RunAsync(async () =>
+        {
+            var downloadPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "DreamWin", "updates");
+
+            var installerPath = await App.UpdateService.DownloadUpdateAsync(LatestRelease, downloadPath);
+            if (installerPath == null)
+            {
+                UpdateStatus = "Download failed";
+                return;
+            }
+
+            var result = await App.UpdateService.InstallUpdateAsync(installerPath);
+            if (result)
+            {
+                UpdateStatus = "Update installer started";
+                // Optionally close the application after starting the installer
+                // Application.Current.Shutdown();
+            }
+            else
+            {
+                UpdateStatus = "Installation failed";
+            }
+        }, "Installing update");
     }
 
     public void AddReceiver(ReceiverConfig config)

@@ -13,6 +13,12 @@ public partial class SettingsView : UserControl
 
     private MainViewModel? VM => DataContext as MainViewModel;
 
+    private void UserControl_Loaded(object sender, RoutedEventArgs e)
+    {
+        // Subscribe to checkbox changes to save settings
+        // This will be handled through two-way binding and code-behind if needed
+    }
+
     private void AddReceiverClick(object sender, RoutedEventArgs e)
     {
         _editingReceiver = null;
@@ -104,5 +110,10 @@ public partial class SettingsView : UserControl
         FieldStreamPort.Text = "8001";
         FieldUsername.Text = "";
         FieldPassword.Password = "";
+    }
+
+    private void UpdateSettingChanged(object sender, RoutedEventArgs e)
+    {
+        App.SettingsService.Settings.Save();
     }
 }

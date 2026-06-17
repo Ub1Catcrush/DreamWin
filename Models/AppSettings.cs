@@ -12,6 +12,12 @@ public class AppSettings
     public string Theme { get; set; } = "Dark";
     public int EpgDays { get; set; } = 3;
     public string LastBouquetRef { get; set; } = "";
+    
+    // Update settings
+    public bool CheckForUpdates { get; set; } = true;
+    public bool IncludePrereleases { get; set; } = false;
+    public DateTime LastUpdateCheckTime { get; set; } = DateTime.MinValue;
+    public string? SkippedUpdateVersion { get; set; }
 
     private static readonly string SettingsPath =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DreamWin", "settings.json");
