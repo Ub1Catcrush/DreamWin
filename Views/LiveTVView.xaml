@@ -1,0 +1,253 @@
+<UserControl x:Class="DreamWin.Views.LiveTVView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vlc="clr-namespace:LibVLCSharp.WPF;assembly=LibVLCSharp.WPF"
+             Background="{StaticResource BgDeep}">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="260"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- ── Channel List Panel ──────────────────────────── -->
+        <Border Grid.Column="0" Background="{StaticResource BgPanel}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>  <!-- Bouquet tabs -->
+                    <RowDefinition Height="Auto"/>  <!-- Search -->
+                    <RowDefinition Height="*"/>     <!-- Channel list -->
+                </Grid.RowDefinitions>
+
+                <!-- Bouquet selector (horizontal scroll) -->
+                <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Disabled" Padding="8,8,8,0">
+                    <ItemsControl ItemsSource="{Binding Bouquets}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Margin="0,0,4,0" Padding="10,5" FontSize="11"
+                                        Command="{Binding DataContext.SelectBouquetCommand,
+                                                  RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding}">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource BaseButton}">
+                                            <Style.Triggers>
+                                                <DataTrigger Value="True">
+                                                    <DataTrigger.Binding>
+                                                        <MultiBinding Converter="{StaticResource ObjectsEqual}">
+                                                            <Binding/>
+                                                            <Binding Path="DataContext.SelectedBouquet"
+                                                                     RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                                                        </MultiBinding>
+                                                    </DataTrigger.Binding>
+                                                    <Setter Property="Background" Value="{StaticResource Accent}"/>
+                                                    <Setter Property="BorderBrush" Value="{StaticResource Accent}"/>
+                                                    <Setter Property="Foreground" Value="White"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                    <TextBlock Text="{Binding ServiceName}"/>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <!-- Search -->
+                <Border Grid.Row="1" Padding="8,6">
+                    <TextBox Style="{StaticResource DarkTextBox}"
+                             Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                             FontSize="12">
+                        <TextBox.Resources>
+                            <Style TargetType="Border">
+                                <Setter Property="CornerRadius" Value="6"/>
+                            </Style>
+                        </TextBox.Resources>
+                    </TextBox>
+                </Border>
+
+                <!-- Channel list -->
+                <ListBox Grid.Row="2"
+                         Style="{StaticResource DarkListBox}"
+                         ItemContainerStyle="{StaticResource DarkListBoxItem}"
+                         ItemsSource="{Binding Services}"
+                         SelectedItem="{Binding SelectedService}"
+                         Padding="6,0,6,6">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="{Binding ServiceName}" FontSize="13" FontWeight="Medium"
+                                               Foreground="{StaticResource TextPrimary}"
+                                               TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+                                <Button Grid.Column="1" Style="{StaticResource IconButton}"
+                                        Content="▶" FontSize="10" ToolTip="Play"
+                                        Command="{Binding DataContext.SelectServiceCommand,
+                                                  RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding}"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                    <ListBox.InputBindings>
+                        <MouseBinding MouseAction="LeftDoubleClick"
+                                      Command="{Binding SelectServiceCommand}"
+                                      CommandParameter="{Binding SelectedItem, RelativeSource={RelativeSource AncestorType=ListBox}}"/>
+                    </ListBox.InputBindings>
+                </ListBox>
+            </Grid>
+        </Border>
+
+        <!-- ── Video + Info Panel ──────────────────────────── -->
+        <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Video Player -->
+            <Border Grid.Row="0" Background="Black">
+                <!-- VLC VideoView: per LibVLCSharp.WPF airspace handling, all overlay content
+                     (placeholder, controls) must be placed INSIDE VideoView, not as siblings,
+                     otherwise the native video window breaks WPF hit-testing/focus for the
+                     whole window. -->
+                <vlc:VideoView x:Name="VideoView" Background="Black">
+                    <Grid>
+                        <!-- No stream placeholder -->
+                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    Visibility="{Binding IsPlaying, Converter={StaticResource BoolToVisibilityInverted}}">
+                            <TextBlock Text="📺" FontSize="64" HorizontalAlignment="Center" Opacity="0.2"/>
+                            <TextBlock Text="Select a channel to start watching"
+                                       Foreground="{StaticResource TextMuted}"
+                                       FontSize="14" HorizontalAlignment="Center" Margin="0,12,0,0"/>
+                        </StackPanel>
+
+                        <!-- Player Controls Overlay -->
+                        <Border VerticalAlignment="Bottom" Background="#C0000000"
+                                Visibility="{Binding IsPlaying, Converter={StaticResource BoolToVisibility}}">
+                            <Grid Margin="12,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Current / Next EPG -->
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="{Binding SelectedService.ServiceName}"
+                                               FontSize="14" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextPrimary}"/>
+                                    <StackPanel Orientation="Horizontal"
+                                                Visibility="{Binding CurrentEvent, Converter={StaticResource NullToVisibility}}">
+                                        <TextBlock Text="{Binding CurrentEvent.TimeRange}"
+                                                   FontSize="11" Foreground="{StaticResource Accent}" Margin="0,0,8,0"/>
+                                        <TextBlock Text="{Binding CurrentEvent.Title}"
+                                                   FontSize="11" Foreground="{StaticResource TextSecondary}"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                    </StackPanel>
+                                    <!-- Progress bar -->
+                                    <Border Height="3" Background="{StaticResource BgCard}" CornerRadius="2" Margin="0,4,0,0"
+                                            Visibility="{Binding CurrentEvent, Converter={StaticResource NullToVisibility}}">
+                                        <Border HorizontalAlignment="Left" Background="{StaticResource Accent}"
+                                                CornerRadius="2">
+                                            <Border.Width>
+                                                <MultiBinding Converter="{StaticResource ProgressToWidth}">
+                                                    <Binding Path="CurrentEvent.ProgressPercent"/>
+                                                    <Binding Path="ActualWidth" RelativeSource="{RelativeSource AncestorType=Border}"/>
+                                                </MultiBinding>
+                                            </Border.Width>
+                                        </Border>
+                                    </Border>
+                                </StackPanel>
+
+                                <!-- Controls -->
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button Style="{StaticResource IconButton}"
+                                            Command="{Binding ChannelDownCommand}"
+                                            Content="⏮" ToolTip="Previous channel"/>
+                                    <Button Style="{StaticResource IconButton}"
+                                            Command="{Binding ChannelUpCommand}"
+                                            Content="⏭" ToolTip="Next channel"/>
+                                    <Button Style="{StaticResource IconButton}"
+                                            Command="{Binding ToggleMuteCommand}"
+                                            ToolTip="Toggle mute">
+                                        <TextBlock>
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Text" Value="🔊"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsMuted}" Value="True">
+                                                            <Setter Property="Text" Value="🔇"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </Button>
+                                    <Slider Width="80" VerticalAlignment="Center" Margin="4,0"
+                                            Minimum="0" Maximum="100"
+                                            Value="{Binding Volume}"
+                                            Foreground="{StaticResource Accent}"/>
+                                    <Button Style="{StaticResource IconButton}"
+                                            Command="{Binding ToggleFullscreenCommand}"
+                                            Content="⛶" ToolTip="Fullscreen"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </vlc:VideoView>
+            </Border>
+
+            <!-- Now/Next Info Bar -->
+            <Border Grid.Row="1" Background="{StaticResource BgPanel}"
+                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0"
+                    Padding="16,10"
+                    Visibility="{Binding CurrentEvent, Converter={StaticResource NullToVisibility}}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Now -->
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="NOW" FontSize="10" FontWeight="Bold"
+                                   Foreground="{StaticResource Accent}" Margin="0,0,0,3"/>
+                        <TextBlock Text="{Binding CurrentEvent.Title}"
+                                   FontSize="13" FontWeight="Medium" Foreground="{StaticResource TextPrimary}"
+                                   TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Text="{Binding CurrentEvent.TimeRange}"
+                                   FontSize="11" Foreground="{StaticResource TextSecondary}"/>
+                        <TextBlock Text="{Binding CurrentEvent.ShortDesc}"
+                                   FontSize="11" Foreground="{StaticResource TextMuted}"
+                                   TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
+                    </StackPanel>
+
+                    <Separator Grid.Column="1" Width="1" Background="{StaticResource BorderBrush}" Margin="16,0"/>
+
+                    <!-- Next -->
+                    <StackPanel Grid.Column="2"
+                                Visibility="{Binding NextEvent, Converter={StaticResource NullToVisibility}}">
+                        <TextBlock Text="NEXT" FontSize="10" FontWeight="Bold"
+                                   Foreground="{StaticResource TextMuted}" Margin="0,0,0,3"/>
+                        <TextBlock Text="{Binding NextEvent.Title}"
+                                   FontSize="13" Foreground="{StaticResource TextSecondary}"
+                                   TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Text="{Binding NextEvent.TimeRange}"
+                                   FontSize="11" Foreground="{StaticResource TextMuted}"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

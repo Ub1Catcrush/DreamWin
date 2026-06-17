@@ -1,0 +1,253 @@
+<Window x:Class="DreamWin.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vlc="clr-namespace:LibVLCSharp.WPF;assembly=LibVLCSharp.WPF"
+        xmlns:vm="clr-namespace:DreamWin.ViewModels"
+        xmlns:views="clr-namespace:DreamWin.Views"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="{Binding WindowTitle}"
+        MinWidth="1100" MinHeight="700"
+        Width="1280" Height="800"
+        Background="{StaticResource BgDeep}"
+        FontFamily="{StaticResource DisplayFont}"
+        WindowStyle="None">
+
+    <!-- WindowChrome gives a borderless custom title bar WITHOUT AllowsTransparency.
+         AllowsTransparency forces full-window layered/software composition, which is
+         fundamentally incompatible with any hosted native child window (HwndHost) such
+         as LibVLCSharp's VideoView — it corrupts repainting for the entire window,
+         not just the video area. WindowChrome avoids this while keeping the custom title bar. -->
+    <WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="0"
+                             ResizeBorderThickness="6"
+                             GlassFrameThickness="0"
+                             CornerRadius="0"
+                             UseAeroCaptionButtons="False"/>
+    </WindowChrome.WindowChrome>
+
+    <Window.Resources>
+        <!-- Nav button style selector helper -->
+        <Style x:Key="NavBtn" TargetType="Button" BasedOn="{StaticResource NavButton}">
+            <Setter Property="Margin" Value="4,2"/>
+        </Style>
+    </Window.Resources>
+
+    <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="44"/>  <!-- Title bar -->
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- ── Custom Title Bar ─────────────────────────────────── -->
+            <Border Grid.Row="0" Background="{StaticResource BgPanel}"
+                    MouseLeftButtonDown="TitleBar_MouseDown">
+                <Grid Margin="12,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Logo -->
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Ellipse Width="22" Height="22" Fill="{StaticResource Accent}" Margin="0,0,8,0">
+                            <Ellipse.Effect>
+                                <DropShadowEffect Color="#6C63FF" BlurRadius="12" ShadowDepth="0" Opacity="0.8"/>
+                            </Ellipse.Effect>
+                        </Ellipse>
+                        <TextBlock Text="DREAM" FontSize="14" FontWeight="Black" Foreground="{StaticResource TextPrimary}"
+                                   VerticalAlignment="Center"/>
+                        <TextBlock Text="WIN" FontSize="14" FontWeight="Black" Foreground="{StaticResource Accent}"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <!-- Receiver Switcher + Status -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Ellipse Width="7" Height="7" Margin="0,0,6,0">
+                            <Ellipse.Style>
+                                <Style TargetType="Ellipse">
+                                    <Setter Property="Fill" Value="{StaticResource AccentRed}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsConnected}" Value="True">
+                                            <Setter Property="Fill" Value="{StaticResource Success}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Ellipse.Style>
+                        </Ellipse>
+                        <TextBlock Text="{Binding ConnectionStatus}" Foreground="{StaticResource TextSecondary}"
+                                   FontSize="12" VerticalAlignment="Center" Margin="0,0,16,0"/>
+
+                        <!-- Receiver selector -->
+                        <ItemsControl ItemsSource="{Binding Receivers}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Style="{StaticResource BaseButton}" Margin="2,0"
+                                            Padding="8,3" FontSize="11"
+                                            Command="{Binding DataContext.SwitchReceiverCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            CommandParameter="{Binding}">
+                                        <TextBlock Text="{Binding Name}"/>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <!-- Window Controls -->
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Style="{StaticResource IconButton}" Click="MinimizeClick" Content="─" FontSize="12"/>
+                        <Button Style="{StaticResource IconButton}" Click="MaximizeClick" Content="□" FontSize="12"/>
+                        <Button Style="{StaticResource IconButton}" Click="CloseClick" Content="✕"
+                                Foreground="{StaticResource AccentRed}" FontSize="12"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- ── Main Content ──────────────────────────────────────── -->
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="200"/>   <!-- Sidebar -->
+                    <ColumnDefinition Width="*"/>     <!-- Content -->
+                </Grid.ColumnDefinitions>
+
+                <!-- ── Sidebar ─────────────────────────────────────── -->
+                <Border Grid.Column="0" Background="{StaticResource BgPanel}"
+                        BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="0,0,1,0">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Nav Items -->
+                        <StackPanel Grid.Row="0" Margin="8,12">
+                            <TextBlock Text="NAVIGATION" FontSize="10" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextMuted}" Margin="8,0,0,8"/>
+
+                            <Button Content="📺  Live TV" Margin="0,2"
+                                    Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:AppView.LiveTV}">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding CurrentView}" Value="{x:Static vm:AppView.LiveTV}">
+                                                <Setter Property="Background" Value="{StaticResource Accent}"/>
+                                                <Setter Property="Foreground" Value="White"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+
+                            <Button Content="📅  EPG Guide" Margin="0,2"
+                                    Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:AppView.EPG}">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding CurrentView}" Value="{x:Static vm:AppView.EPG}">
+                                                <Setter Property="Background" Value="{StaticResource Accent}"/>
+                                                <Setter Property="Foreground" Value="White"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+
+                            <Button Content="⏺  Timers" Margin="0,2"
+                                    Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:AppView.Timers}">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding CurrentView}" Value="{x:Static vm:AppView.Timers}">
+                                                <Setter Property="Background" Value="{StaticResource Accent}"/>
+                                                <Setter Property="Foreground" Value="White"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+
+                            <Button Content="🎬  Recordings" Margin="0,2"
+                                    Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:AppView.Movies}">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding CurrentView}" Value="{x:Static vm:AppView.Movies}">
+                                                <Setter Property="Background" Value="{StaticResource Accent}"/>
+                                                <Setter Property="Foreground" Value="White"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+
+                            <Separator Background="{StaticResource BorderBrush}" Margin="8,12"/>
+
+                            <Button Content="⚙  Settings" Margin="0,2"
+                                    Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:AppView.Settings}">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding CurrentView}" Value="{x:Static vm:AppView.Settings}">
+                                                <Setter Property="Background" Value="{StaticResource Accent}"/>
+                                                <Setter Property="Foreground" Value="White"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                        </StackPanel>
+
+                        <!-- Bottom: Receiver + Standby -->
+                        <Border Grid.Row="1" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0"
+                                Padding="8,10">
+                            <StackPanel>
+                                <TextBlock Text="{Binding ActiveReceiver.Name, FallbackValue='No Receiver'}"
+                                           FontSize="11" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextPrimary}" Margin="4,0,0,2"/>
+                                <TextBlock Text="{Binding ActiveReceiver.Host, FallbackValue=''}"
+                                           FontSize="10" Foreground="{StaticResource TextMuted}" Margin="4,0,0,6"/>
+                                <Button Content="⏻  Standby" Style="{StaticResource BaseButton}"
+                                        Command="{Binding StandbyCommand}" FontSize="11"
+                                        HorizontalAlignment="Stretch"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </Border>
+
+                <!-- ── Main Content Area ─────────────────────────────── -->
+                <!-- Only ONE view is ever instantiated/in the visual tree at a time (see
+                     MainWindow.xaml.cs Navigate handling). Previously all five views (incl.
+                     two LibVLCSharp VideoView/HwndHost controls) were created and Loaded
+                     simultaneously, just toggling Visibility. HwndHost children create native
+                     child windows that sit in their own z-order ("airspace") above WPF's own
+                     rendering regardless of Visibility/ZIndex — with two of them alive at once,
+                     clicks on the WPF chrome (nav buttons, title bar buttons, channel list)
+                     could be intercepted by the wrong native surface, especially after a
+                     minimize/restore or alt-tab cycle. Swapping a single ContentControl's
+                     Content avoids ever having more than one HwndHost alive. -->
+                <Grid Grid.Column="1">
+                    <ContentControl x:Name="ViewHost" Focusable="False"/>
+
+                    <!-- Busy Overlay -->
+                    <Border Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}"
+                            IsHitTestVisible="{Binding IsBusy}"
+                            Background="#80000000">
+                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <TextBlock Text="⟳" FontSize="32" Foreground="{StaticResource Accent}"
+                                       HorizontalAlignment="Center"/>
+                            <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource TextSecondary}"
+                                       FontSize="13" Margin="0,8,0,0"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

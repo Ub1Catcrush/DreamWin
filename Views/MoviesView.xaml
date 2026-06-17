@@ -1,0 +1,130 @@
+<UserControl x:Class="DreamWin.Views.MoviesView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vlc="clr-namespace:LibVLCSharp.WPF;assembly=LibVLCSharp.WPF"
+             Background="{StaticResource BgDeep}">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="300"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Movie List -->
+        <Border Grid.Column="0" Background="{StaticResource BgPanel}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <Border Grid.Row="0" Padding="12,12,12,8"
+                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
+                    <TextBlock Text="Recordings" FontSize="16" FontWeight="Bold"
+                               Foreground="{StaticResource TextPrimary}"/>
+                </Border>
+
+                <ListBox Grid.Row="1" Style="{StaticResource DarkListBox}"
+                         ItemContainerStyle="{StaticResource DarkListBoxItem}"
+                         ItemsSource="{Binding Movies}"
+                         SelectedItem="{Binding SelectedMovie}"
+                         Padding="6">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="0,2">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Text="{Binding Title}"
+                                           FontSize="12" FontWeight="Medium"
+                                           Foreground="{StaticResource TextPrimary}"
+                                           TextTrimming="CharacterEllipsis"/>
+                                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,2,0,0">
+                                    <TextBlock Text="{Binding ServiceName}"
+                                               FontSize="10" Foreground="{StaticResource Accent}"/>
+                                    <TextBlock Text=" · " FontSize="10" Foreground="{StaticResource TextMuted}"/>
+                                    <TextBlock Text="{Binding Length}"
+                                               FontSize="10" Foreground="{StaticResource TextMuted}"/>
+                                </StackPanel>
+                                <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,1,0,0">
+                                    <TextBlock Text="{Binding RecordingDate, StringFormat='dd.MM.yyyy'}"
+                                               FontSize="10" Foreground="{StaticResource TextMuted}"/>
+                                    <TextBlock Text=" · " FontSize="10" Foreground="{StaticResource TextMuted}"/>
+                                    <TextBlock Text="{Binding Filesize, Converter={StaticResource FilesizeMB}}"
+                                               FontSize="10" Foreground="{StaticResource TextMuted}"/>
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <!-- Error banner: surfaces load failures that would otherwise just leave
+                     the recordings list looking silently empty. -->
+                <Border Grid.Row="1" VerticalAlignment="Top" Margin="8,8,8,0" Padding="10,8" CornerRadius="6"
+                        Background="#332E3A" BorderBrush="{StaticResource AccentRed}" BorderThickness="1"
+                        Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}">
+                    <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource AccentRed}"
+                               FontSize="11" TextWrapping="Wrap"/>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- Movie Player / Details -->
+        <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Player -->
+            <Border Grid.Row="0" Background="Black">
+                <!-- VLC VideoView: overlay content must be placed INSIDE VideoView per
+                     LibVLCSharp.WPF's airspace handling, not as a sibling. -->
+                <vlc:VideoView x:Name="MovieVideoView" Background="Black">
+                    <Grid>
+                        <!-- Placeholder -->
+                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    Visibility="{Binding IsPlaying, Converter={StaticResource BoolToVisibilityInverted}}">
+                            <TextBlock Text="{Binding SelectedMovie.Title, FallbackValue='Select a recording'}"
+                                       FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextSecondary}"
+                                       HorizontalAlignment="Center" TextAlignment="Center"/>
+                            <TextBlock Text="{Binding SelectedMovie.Description}"
+                                       FontSize="12" Foreground="{StaticResource TextMuted}"
+                                       HorizontalAlignment="Center" TextAlignment="Center"
+                                       MaxWidth="400" TextWrapping="Wrap" Margin="0,10,0,0"/>
+                            <Button Style="{StaticResource AccentButton}" Margin="0,20,0,0"
+                                    Padding="20,10" FontSize="14" Content="▶  Play"
+                                    Visibility="{Binding SelectedMovie, Converter={StaticResource NullToVisibility}}"
+                                    Command="{Binding PlayMovieCommand}"
+                                    CommandParameter="{Binding SelectedMovie}"/>
+                        </StackPanel>
+                    </Grid>
+                </vlc:VideoView>
+            </Border>
+
+            <!-- Details bar -->
+            <Border Grid.Row="1" Background="{StaticResource BgPanel}"
+                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="16,10"
+                    Visibility="{Binding SelectedMovie, Converter={StaticResource NullToVisibility}}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="{Binding SelectedMovie.Title}" FontSize="14" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimary}"/>
+                        <TextBlock Text="{Binding SelectedMovie.DescriptionExtended}"
+                                   FontSize="11" Foreground="{StaticResource TextMuted}"
+                                   TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
+                    </StackPanel>
+                    <Button Grid.Column="1" Style="{StaticResource DangerButton}"
+                            Content="Delete" Padding="12,6"
+                            Command="{Binding DeleteMovieCommand}"
+                            CommandParameter="{Binding SelectedMovie}"/>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>
