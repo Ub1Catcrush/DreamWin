@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.Versioning;
 using System.Windows;
 using System.Windows.Controls;
 using LibVLCSharp.Shared;
@@ -6,6 +7,7 @@ using DreamWin.ViewModels;
 
 namespace DreamWin.Views;
 
+[SupportedOSPlatform("windows")]
 public partial class MoviesView : UserControl
 {
     private LibVLC? _libVlc;

@@ -116,4 +116,16 @@ public partial class SettingsView : UserControl
     {
         App.SettingsService.Settings.Save();
     }
+
+    private void ThemePresetClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: string presetName })
+            VM?.ApplyThemePresetCommand.Execute(presetName);
+    }
+
+    private void ApplyCustomAccentClick(object sender, RoutedEventArgs e)
+    {
+        if (AccentColorInput != null)
+            VM?.ApplyCustomAccentCommand.Execute(AccentColorInput.Text.Trim());
+    }
 }

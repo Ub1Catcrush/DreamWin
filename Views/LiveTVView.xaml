@@ -5,7 +5,8 @@
              Background="{StaticResource BgDeep}">
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="260"/>
+            <ColumnDefinition Width="320" MinWidth="260"/>
+            <ColumnDefinition Width="6"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
@@ -20,44 +21,50 @@
                 </Grid.RowDefinitions>
 
                 <!-- Bouquet selector (horizontal scroll) -->
-                <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Auto"
-                              VerticalScrollBarVisibility="Disabled" Padding="8,8,8,0">
-                    <ItemsControl ItemsSource="{Binding Bouquets}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <StackPanel Orientation="Horizontal"/>
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Button Margin="0,0,4,0" Padding="10,5" FontSize="11"
-                                        Command="{Binding DataContext.SelectBouquetCommand,
-                                                  RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                        CommandParameter="{Binding}">
-                                    <Button.Style>
-                                        <Style TargetType="Button" BasedOn="{StaticResource BaseButton}">
-                                            <Style.Triggers>
-                                                <DataTrigger Value="True">
-                                                    <DataTrigger.Binding>
-                                                        <MultiBinding Converter="{StaticResource ObjectsEqual}">
-                                                            <Binding/>
-                                                            <Binding Path="DataContext.SelectedBouquet"
-                                                                     RelativeSource="{RelativeSource AncestorType=UserControl}"/>
-                                                        </MultiBinding>
-                                                    </DataTrigger.Binding>
-                                                    <Setter Property="Background" Value="{StaticResource Accent}"/>
-                                                    <Setter Property="BorderBrush" Value="{StaticResource Accent}"/>
-                                                    <Setter Property="Foreground" Value="White"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Button.Style>
-                                    <TextBlock Text="{Binding ServiceName}"/>
-                                </Button>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </ScrollViewer>
+                <DockPanel Grid.Row="0" Margin="8,8,8,0">
+                    <Button Style="{StaticResource IconButton}" Width="34" Height="34" DockPanel.Dock="Left"
+                            Content="◀" ToolTip="Scroll bouquets left" Click="ScrollBouquetsLeftClick"/>
+                    <Button Style="{StaticResource IconButton}" Width="34" Height="34" DockPanel.Dock="Right"
+                            Content="▶" ToolTip="Scroll bouquets right" Click="ScrollBouquetsRightClick"/>
+                    <ScrollViewer x:Name="BouquetScrollViewer" HorizontalScrollBarVisibility="Hidden"
+                                  VerticalScrollBarVisibility="Disabled" Padding="0,0,0,0">
+                        <ItemsControl ItemsSource="{Binding Bouquets}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Margin="0,0,4,0" Padding="10,5" FontSize="11"
+                                            Command="{Binding DataContext.SelectBouquetCommand,
+                                                      RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}">
+                                        <Button.Style>
+                                            <Style TargetType="Button" BasedOn="{StaticResource BaseButton}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Value="True">
+                                                        <DataTrigger.Binding>
+                                                            <MultiBinding Converter="{StaticResource ObjectsEqual}">
+                                                                <Binding/>
+                                                                <Binding Path="DataContext.SelectedBouquet"
+                                                                         RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                                                            </MultiBinding>
+                                                        </DataTrigger.Binding>
+                                                        <Setter Property="Background" Value="{StaticResource Accent}"/>
+                                                        <Setter Property="BorderBrush" Value="{StaticResource Accent}"/>
+                                                        <Setter Property="Foreground" Value="White"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                        <TextBlock Text="{Binding ServiceName}"/>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </DockPanel>
 
                 <!-- Search -->
                 <Border Grid.Row="1" Padding="8,6">
@@ -78,20 +85,36 @@
                          ItemContainerStyle="{StaticResource DarkListBoxItem}"
                          ItemsSource="{Binding Services}"
                          SelectedItem="{Binding SelectedService}"
+                         SelectionChanged="ChannelList_SelectionChanged"
                          Padding="6,0,6,6">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <Grid>
                                 <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="40"/>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <StackPanel Grid.Column="0">
+                                <!-- Channel icon: use picon from receiver, fall back to hiding -->
+                                <Border Grid.Column="0" Width="28" Height="28" Margin="0,0,10,0"
+                                        CornerRadius="3" Background="#1A1D27">
+                                    <Image Width="26" Height="26" Stretch="Uniform"
+                                           RenderOptions.BitmapScalingMode="HighQuality">
+                                        <Image.Source>
+                                            <MultiBinding Converter="{StaticResource PiconUrl}" TargetNullValue="{x:Null}" FallbackValue="{x:Null}">
+                                                <Binding Path="ServiceReference"/>
+                                                <Binding Path="DataContext.ActiveReceiver"
+                                                         RelativeSource="{RelativeSource AncestorType=Window}"/>
+                                            </MultiBinding>
+                                        </Image.Source>
+                                    </Image>
+                                </Border>
+                                <StackPanel Grid.Column="1">
                                     <TextBlock Text="{Binding ServiceName}" FontSize="13" FontWeight="Medium"
                                                Foreground="{StaticResource TextPrimary}"
                                                TextTrimming="CharacterEllipsis"/>
                                 </StackPanel>
-                                <Button Grid.Column="1" Style="{StaticResource IconButton}"
+                                <Button Grid.Column="2" Style="{StaticResource IconButton}"
                                         Content="▶" FontSize="10" ToolTip="Play"
                                         Command="{Binding DataContext.SelectServiceCommand,
                                                   RelativeSource={RelativeSource AncestorType=UserControl}}"
@@ -100,7 +123,7 @@
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                     <ListBox.InputBindings>
-                        <MouseBinding MouseAction="LeftDoubleClick"
+                        <MouseBinding MouseAction="LeftClick"
                                       Command="{Binding SelectServiceCommand}"
                                       CommandParameter="{Binding SelectedItem, RelativeSource={RelativeSource AncestorType=ListBox}}"/>
                     </ListBox.InputBindings>
@@ -109,10 +132,11 @@
         </Border>
 
         <!-- ── Video + Info Panel ──────────────────────────── -->
-        <Grid Grid.Column="1">
+        <Grid Grid.Column="2">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*"/>
-                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="6"/>
+                <RowDefinition Height="200"/>
             </Grid.RowDefinitions>
 
             <!-- Video Player -->
@@ -171,12 +195,28 @@
 
                                 <!-- Controls -->
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Button Style="{StaticResource IconButton}"
+                                    <Button Style="{StaticResource IconButton}" Margin="0,0,4,0"
                                             Command="{Binding ChannelDownCommand}"
                                             Content="⏮" ToolTip="Previous channel"/>
-                                    <Button Style="{StaticResource IconButton}"
+                                    <Button Style="{StaticResource IconButton}" Margin="0,0,4,0"
                                             Command="{Binding ChannelUpCommand}"
                                             Content="⏭" ToolTip="Next channel"/>
+                                    <Button Style="{StaticResource IconButton}" Margin="0,0,4,0"
+                                            Command="{Binding PauseResumeCommand}"
+                                            ToolTip="Pause / resume">
+                                        <TextBlock>
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Text" Value="⏸"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsPaused}" Value="True">
+                                                            <Setter Property="Text" Value="▶"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </Button>
                                     <Button Style="{StaticResource IconButton}"
                                             Command="{Binding ToggleMuteCommand}"
                                             ToolTip="Toggle mute">
@@ -193,10 +233,42 @@
                                             </TextBlock.Style>
                                         </TextBlock>
                                     </Button>
-                                    <Slider Width="80" VerticalAlignment="Center" Margin="4,0"
+                                    <Slider Width="80" VerticalAlignment="Center" Margin="0"
                                             Minimum="0" Maximum="100"
                                             Value="{Binding Volume}"
                                             Foreground="{StaticResource Accent}"/>
+                                    <ComboBox Width="140" VerticalAlignment="Center" Margin="4,0"
+                                              Style="{StaticResource DarkComboBox}"
+                                              ItemsSource="{Binding AudioTracks}"
+                                              SelectedItem="{Binding SelectedAudioTrack}"
+                                              DisplayMemberPath="Name"
+                                              ToolTip="Audio track">
+                                        <ComboBox.Resources>
+                                            <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="{StaticResource BgCardColor}"/>
+                                            <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}" Color="{StaticResource TextPrimaryColor}"/>
+                                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="{StaticResource AccentColor}"/>
+                                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="White"/>
+                                        </ComboBox.Resources>
+                                        <ComboBox.ItemContainerStyle>
+                                            <Style TargetType="ComboBoxItem">
+                                                <Setter Property="Background" Value="{StaticResource BgCard}"/>
+                                                <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+                                                <Setter Property="Padding" Value="6,4"/>
+                                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                                <Setter Property="VerticalContentAlignment" Value="Center"/>
+                                                <Style.Triggers>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter Property="Background" Value="{StaticResource Accent}"/>
+                                                        <Setter Property="Foreground" Value="White"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter Property="Background" Value="{StaticResource BgHover}"/>
+                                                        <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+                                                    </Trigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </ComboBox.ItemContainerStyle>
+                                    </ComboBox>
                                     <Button Style="{StaticResource IconButton}"
                                             Command="{Binding ToggleFullscreenCommand}"
                                             Content="⛶" ToolTip="Fullscreen"/>
@@ -207,8 +279,11 @@
                 </vlc:VideoView>
             </Border>
 
+            <GridSplitter Grid.Row="1" Height="6" HorizontalAlignment="Stretch"
+                          Background="{StaticResource BorderBrush}" ResizeDirection="Rows"/>
+
             <!-- Now/Next Info Bar -->
-            <Border Grid.Row="1" Background="{StaticResource BgPanel}"
+            <Border Grid.Row="2" Background="{StaticResource BgPanel}"
                     BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0"
                     Padding="16,10"
                     Visibility="{Binding CurrentEvent, Converter={StaticResource NullToVisibility}}">

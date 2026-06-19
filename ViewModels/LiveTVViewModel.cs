@@ -19,9 +19,12 @@ public partial class LiveTVViewModel : BaseViewModel
     [ObservableProperty] private EpgEvent? _nextEvent;
     [ObservableProperty] private string _currentStreamUrl = "";
     [ObservableProperty] private bool _isPlaying;
+    [ObservableProperty] private bool _isPaused;
     [ObservableProperty] private double _volume = 80;
     [ObservableProperty] private bool _isMuted;
     [ObservableProperty] private bool _isFullscreen;
+    [ObservableProperty] private AudioTrackInfo? _selectedAudioTrack;
+    [ObservableProperty] private ObservableCollection<AudioTrackInfo> _audioTracks = [];
     [ObservableProperty] private string _searchText = "";
 
     public event EventHandler<string>? StreamRequested;
@@ -117,6 +120,12 @@ public partial class LiveTVViewModel : BaseViewModel
     }
 
     [RelayCommand]
+    private void PauseResume()
+    {
+        IsPaused = !IsPaused;
+    }
+
+    [RelayCommand]
     private async Task ChannelUpAsync()
     {
         if (SelectedService == null || !Services.Any()) return;
@@ -142,5 +151,13 @@ public partial class LiveTVViewModel : BaseViewModel
     partial void OnSearchTextChanged(string value)
     {
         // Filter handled by converter in view
+    }
+
+    public class AudioTrackInfo
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = "";
+
+        public override string ToString() => Name;
     }
 }

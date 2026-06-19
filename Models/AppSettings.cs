@@ -19,6 +19,11 @@ public class AppSettings
     public DateTime LastUpdateCheckTime { get; set; } = DateTime.MinValue;
     public string? SkippedUpdateVersion { get; set; }
 
+    // Color scheme
+    public string AccentColor { get; set; } = "#6C63FF";
+    public string BgDeepColor { get; set; } = "#0F1117";
+    public string BgPanelColor { get; set; } = "#1A1D27";
+
     private static readonly string SettingsPath =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DreamWin", "settings.json");
 

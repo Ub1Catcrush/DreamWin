@@ -17,105 +17,221 @@
                     <TextBlock Text="{Binding Timers.Count, StringFormat='{}{0} scheduled'}"
                                FontSize="12" Foreground="{StaticResource TextSecondary}"/>
                 </StackPanel>
-                <Button HorizontalAlignment="Right" Style="{StaticResource AccentButton}"
-                        Content="↺ Refresh" Padding="14,8" Command="{Binding LoadCommand}"
-                        IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}"/>
+                <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                    <Button Style="{StaticResource BaseButton}" Padding="12,8" Margin="0,0,8,0"
+                            Content="↺ Refresh" Command="{Binding LoadCommand}"
+                            IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}"/>
+                    <Button Style="{StaticResource AccentButton}" Padding="14,8"
+                            Content="+ New Timer" Command="{Binding NewTimerCommand}"
+                            IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}"/>
+                </StackPanel>
             </Grid>
         </Border>
 
-        <!-- Timer List -->
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-            <StackPanel>
-                <!-- Error banner: surfaces load failures (network/parse errors) that would
-                     otherwise just leave the list looking silently empty. -->
-                <Border Margin="12,12,12,0" Padding="12,8" CornerRadius="6"
-                        Background="#332E3A" BorderBrush="{StaticResource AccentRed}" BorderThickness="1"
-                        Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}">
-                    <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource AccentRed}"
-                               FontSize="12" TextWrapping="Wrap"/>
-                </Border>
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="380"/>
+            </Grid.ColumnDefinitions>
 
-                <ItemsControl ItemsSource="{Binding Timers}" Padding="12">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Border Margin="0,0,0,6" CornerRadius="8"
-                                Background="{StaticResource BgCard}"
-                                BorderThickness="1">
-                            <Border.BorderBrush>
-                                <Binding Path="State" Converter="{StaticResource TimerStateToColor}"/>
-                            </Border.BorderBrush>
-                            <Grid Margin="14,10">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
+            <!-- Timer List -->
+            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <!-- Error banner -->
+                    <Border Margin="12,12,12,0" Padding="12,8" CornerRadius="6"
+                            Background="#332E3A" BorderBrush="{StaticResource AccentRed}" BorderThickness="1"
+                            Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}">
+                        <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource AccentRed}"
+                                   FontSize="12" TextWrapping="Wrap"/>
+                    </Border>
 
-                                <!-- State indicator -->
-                                <Border Grid.Column="0" Width="4" CornerRadius="2" Margin="0,0,12,0"
-                                        Background="{Binding State, Converter={StaticResource TimerStateToColor}}"/>
+                    <ItemsControl ItemsSource="{Binding Timers}" Padding="12">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Margin="0,0,0,6" CornerRadius="8"
+                                        Background="{StaticResource BgCard}"
+                                        BorderThickness="1">
+                                    <Border.BorderBrush>
+                                        <Binding Path="State" Converter="{StaticResource TimerStateToColor}"/>
+                                    </Border.BorderBrush>
+                                    <Grid Margin="14,10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
 
-                                <!-- Info -->
-                                <StackPanel Grid.Column="1">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="{Binding Name}"
-                                                   FontSize="13" FontWeight="SemiBold"
-                                                   Foreground="{StaticResource TextPrimary}"
-                                                   TextTrimming="CharacterEllipsis"/>
-                                        <Border CornerRadius="3" Padding="5,1" Margin="8,0,0,0"
-                                                Visibility="{Binding IsActive, Converter={StaticResource BoolToVisibility}}">
-                                            <Border.Background>
-                                                <SolidColorBrush Color="#EF4444" Opacity="0.2"/>
-                                            </Border.Background>
-                                            <TextBlock Text="REC" FontSize="9" FontWeight="Bold"
-                                                       Foreground="{StaticResource AccentRed}"/>
-                                        </Border>
-                                        <Border CornerRadius="3" Padding="5,1" Margin="8,0,0,0"
-                                                Visibility="{Binding IsDisabled, Converter={StaticResource BoolToVisibility}}">
-                                            <Border.Background>
-                                                <SolidColorBrush Color="#6B7280" Opacity="0.2"/>
-                                            </Border.Background>
-                                            <TextBlock Text="OFF" FontSize="9" FontWeight="Bold"
-                                                       Foreground="{StaticResource TextMuted}"/>
-                                        </Border>
-                                    </StackPanel>
-                                    <TextBlock Text="{Binding ServiceName}"
-                                               FontSize="11" Foreground="{StaticResource Accent}" Margin="0,2,0,0"/>
-                                    <TextBlock Text="{Binding TimeRange}"
-                                               FontSize="11" Foreground="{StaticResource TextSecondary}" Margin="0,1,0,0"/>
-                                    <TextBlock Text="{Binding StateText}"
-                                               FontSize="10" Foreground="{StaticResource TextMuted}" Margin="0,2,0,0"/>
-                                </StackPanel>
+                                        <!-- State indicator -->
+                                        <Border Grid.Column="0" Width="4" CornerRadius="2" Margin="0,0,12,0"
+                                                Background="{Binding State, Converter={StaticResource TimerStateToColor}}"/>
 
-                                <!-- Actions -->
-                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Button Style="{StaticResource BaseButton}" Margin="0,0,6,0"
-                                            Padding="8,5" FontSize="11" Content="Toggle"
-                                            Command="{Binding DataContext.ToggleTimerCommand,
-                                                      RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                            CommandParameter="{Binding}"/>
-                                    <Button Style="{StaticResource DangerButton}"
-                                            Padding="8,5" FontSize="11" Content="Delete"
-                                            Command="{Binding DataContext.DeleteTimerCommand,
-                                                      RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                            CommandParameter="{Binding}"/>
-                                </StackPanel>
-                            </Grid>
-                        </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </StackPanel>
-        </ScrollViewer>
+                                        <!-- Info -->
+                                        <StackPanel Grid.Column="1">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding Name}"
+                                                           FontSize="13" FontWeight="SemiBold"
+                                                           Foreground="{StaticResource TextPrimary}"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <Border CornerRadius="3" Padding="5,1" Margin="8,0,0,0"
+                                                        Visibility="{Binding IsActive, Converter={StaticResource BoolToVisibility}}">
+                                                    <Border.Background>
+                                                        <SolidColorBrush Color="#EF4444" Opacity="0.2"/>
+                                                    </Border.Background>
+                                                    <TextBlock Text="REC" FontSize="9" FontWeight="Bold"
+                                                               Foreground="{StaticResource AccentRed}"/>
+                                                </Border>
+                                                <Border CornerRadius="3" Padding="5,1" Margin="8,0,0,0"
+                                                        Visibility="{Binding IsDisabled, Converter={StaticResource BoolToVisibility}}">
+                                                    <Border.Background>
+                                                        <SolidColorBrush Color="#6B7280" Opacity="0.2"/>
+                                                    </Border.Background>
+                                                    <TextBlock Text="OFF" FontSize="9" FontWeight="Bold"
+                                                               Foreground="{StaticResource TextMuted}"/>
+                                                </Border>
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding ServiceName}"
+                                                       FontSize="11" Foreground="{StaticResource Accent}" Margin="0,2,0,0"/>
+                                            <TextBlock Text="{Binding TimeRange}"
+                                                       FontSize="11" Foreground="{StaticResource TextSecondary}" Margin="0,1,0,0"/>
+                                            <TextBlock Text="{Binding StateText}"
+                                                       FontSize="10" Foreground="{StaticResource TextMuted}" Margin="0,2,0,0"/>
+                                        </StackPanel>
+
+                                        <!-- Actions -->
+                                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Button Style="{StaticResource BaseButton}" Margin="0,0,6,0"
+                                                    Padding="8,5" FontSize="11" Content="✏ Edit"
+                                                    Command="{Binding DataContext.EditTimerCommand,
+                                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}"/>
+                                            <Button Style="{StaticResource BaseButton}" Margin="0,0,6,0"
+                                                    Padding="8,5" FontSize="11" Content="Toggle"
+                                                    Command="{Binding DataContext.ToggleTimerCommand,
+                                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}"/>
+                                            <Button Style="{StaticResource DangerButton}"
+                                                    Padding="8,5" FontSize="11" Content="Delete"
+                                                    Command="{Binding DataContext.DeleteTimerCommand,
+                                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- Splitter -->
+            <GridSplitter Grid.Column="1" Width="1" Background="{StaticResource BorderBrush}"
+                          HorizontalAlignment="Center" VerticalAlignment="Stretch"
+                          Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}}"/>
+
+            <!-- Create / Edit Timer Panel -->
+            <Border Grid.Column="2" Background="{StaticResource BgPanel}"
+                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0"
+                    Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="20,16">
+                        <TextBlock FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}" Margin="0,0,0,16">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="Edit Timer"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SelectedTimer}" Value="{x:Null}">
+                                            <Setter Property="Text" Value="New Timer"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+
+                        <!-- Timer Name -->
+                        <TextBlock Text="Timer name" FontSize="11" Foreground="{StaticResource TextSecondary}" Margin="0,0,0,4"/>
+                        <TextBox Text="{Binding EditName, UpdateSourceTrigger=PropertyChanged}"
+                                 Style="{StaticResource DarkTextBox}" Margin="0,0,0,12"/>
+
+                        <!-- Service name -->
+                        <TextBlock Text="Channel name" FontSize="11" Foreground="{StaticResource TextSecondary}" Margin="0,0,0,4"/>
+                        <TextBox Text="{Binding EditServiceName, UpdateSourceTrigger=PropertyChanged}"
+                                 Style="{StaticResource DarkTextBox}" Margin="0,0,0,12"/>
+
+                        <!-- Service ref -->
+                        <TextBlock Text="Service reference" FontSize="11" Foreground="{StaticResource TextSecondary}" Margin="0,0,0,4"/>
+                        <TextBox Text="{Binding EditServiceRef, UpdateSourceTrigger=PropertyChanged}"
+                                 Style="{StaticResource DarkTextBox}" Margin="0,0,0,12"
+                                 ToolTip="e.g. 1:0:1:283D:7E9:1:C00000:0:0:0:"/>
+
+                        <!-- Date -->
+                        <TextBlock Text="Date" FontSize="11" Foreground="{StaticResource TextSecondary}" Margin="0,0,0,4"/>
+                        <DatePicker SelectedDate="{Binding EditBeginDate}"
+                                    Background="{StaticResource BgCard}" Foreground="{StaticResource TextPrimary}"
+                                    BorderBrush="{StaticResource BorderBrush}" Margin="0,0,0,12"/>
+
+                        <!-- Begin / End Time -->
+                        <Grid Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="8"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="Start time (HH:MM)" FontSize="11" Foreground="{StaticResource TextSecondary}" Margin="0,0,0,4"/>
+                                <TextBox Text="{Binding EditBeginTime, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource DarkTextBox}"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="End time (HH:MM)" FontSize="11" Foreground="{StaticResource TextSecondary}" Margin="0,0,0,4"/>
+                                <TextBox Text="{Binding EditEndTime, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource DarkTextBox}"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- After event -->
+                        <TextBlock Text="After event" FontSize="11" Foreground="{StaticResource TextSecondary}" Margin="0,0,0,4"/>
+                        <ComboBox SelectedIndex="{Binding EditAfterEvent}" Margin="0,0,0,20"
+                                  Background="{StaticResource BgCard}" Foreground="{StaticResource TextPrimary}"
+                                  BorderBrush="{StaticResource BorderBrush}">
+                            <ComboBoxItem Content="Nothing"/>
+                            <ComboBoxItem Content="Standby"/>
+                            <ComboBoxItem Content="Deep standby"/>
+                            <ComboBoxItem Content="Auto"/>
+                        </ComboBox>
+
+                        <!-- Buttons -->
+                        <StackPanel Orientation="Horizontal">
+                            <Button Style="{StaticResource AccentButton}" Padding="14,8" Margin="0,0,8,0"
+                                    Content="💾 Save" Command="{Binding SaveTimerCommand}"
+                                    IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}"/>
+                            <Button Style="{StaticResource BaseButton}" Padding="14,8"
+                                    Content="Cancel" Command="{Binding CancelEditCommand}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
 
         <!-- Empty state -->
         <StackPanel Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center"
-                    Visibility="{Binding Timers.Count, Converter={StaticResource NullToVisibilityInverted}}">
+                    Visibility="{Binding Timers.Count, Converter={StaticResource ZeroToVisibility}}">
             <TextBlock Text="⏺" FontSize="56" HorizontalAlignment="Center" Opacity="0.2"/>
             <TextBlock Text="No timers scheduled" Foreground="{StaticResource TextMuted}"
                        FontSize="14" HorizontalAlignment="Center" Margin="0,12,0,0"/>
-            <TextBlock Text="Add timers from the EPG guide" Foreground="{StaticResource TextMuted}"
+            <TextBlock Text="Add timers from the EPG guide or create one manually" Foreground="{StaticResource TextMuted}"
                        FontSize="12" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+            <Button Style="{StaticResource AccentButton}" HorizontalAlignment="Center"
+                    Padding="16,8" Margin="0,16,0,0" Content="+ New Timer"
+                    Command="{Binding NewTimerCommand}"/>
         </StackPanel>
+
+        <!-- Busy overlay -->
+        <Border Grid.Row="1" Background="#80000000"
+                Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <TextBlock Text="{Binding StatusMessage}" Foreground="White" FontSize="14" HorizontalAlignment="Center"/>
+            </StackPanel>
+        </Border>
     </Grid>
 </UserControl>

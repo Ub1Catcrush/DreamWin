@@ -7,7 +7,7 @@ using DreamWin.Services;
 
 namespace DreamWin.ViewModels;
 
-public enum AppView { LiveTV, EPG, Timers, Movies, Settings }
+public enum AppView { LiveTV, EPG, Timers, AutoTimers, Movies, Settings }
 
 public partial class MainViewModel : BaseViewModel
 {
@@ -22,6 +22,7 @@ public partial class MainViewModel : BaseViewModel
     [ObservableProperty] private string _updateStatus = "Checking for updates...";
     [ObservableProperty] private bool _updateAvailable = false;
     [ObservableProperty] private GitHubRelease? _latestRelease;
+    [ObservableProperty] private string _accentColor = "#6C63FF";
 
     public ObservableCollection<ReceiverConfig> Receivers { get; } = [];
 
@@ -29,6 +30,7 @@ public partial class MainViewModel : BaseViewModel
     public LiveTVViewModel LiveTV { get; }
     public EpgViewModel Epg { get; }
     public TimersViewModel Timers { get; }
+    public AutoTimersViewModel AutoTimers { get; }
     public MoviesViewModel Movies { get; }
 
     public MainViewModel(SettingsService settingsService, Enigma2Service api)
@@ -39,6 +41,7 @@ public partial class MainViewModel : BaseViewModel
         LiveTV = new LiveTVViewModel(api);
         Epg = new EpgViewModel(api);
         Timers = new TimersViewModel(api);
+        AutoTimers = new AutoTimersViewModel(api);
         Movies = new MoviesViewModel(api);
 
         foreach (var r in settingsService.Settings.Receivers)
@@ -47,6 +50,10 @@ public partial class MainViewModel : BaseViewModel
         settingsService.ActiveReceiverChanged += (_, r) => _ = ConnectAsync(r);
 
         LiveTV.StreamRequested += (_, url) => { };
+
+        // Apply saved color scheme
+        AccentColor = _settingsService.Settings.AccentColor;
+        ThemeService.Apply(_settingsService.Settings);
 
         // Setup update service event subscriptions
         App.UpdateService.UpdateProgressChanged += (_, msg) =>
@@ -117,6 +124,7 @@ public partial class MainViewModel : BaseViewModel
             {
                 case AppView.EPG: _ = Epg.LoadAsync(); break;
                 case AppView.Timers: _ = Timers.LoadAsync(); break;
+                case AppView.AutoTimers: _ = AutoTimers.LoadAsync(); break;
                 case AppView.Movies: _ = Movies.LoadAsync(); break;
             }
         }
@@ -185,6 +193,30 @@ public partial class MainViewModel : BaseViewModel
                 UpdateStatus = "Installation failed";
             }
         }, "Installing update");
+    }
+
+    [RelayCommand]
+    public void ApplyThemePreset(string presetName)
+    {
+        if (ThemeService.Presets.TryGetValue(presetName, out var p))
+        {
+            AccentColor = p.Accent;
+            _settingsService.Settings.AccentColor = p.Accent;
+            _settingsService.Settings.BgDeepColor = p.BgDeep;
+            _settingsService.Settings.BgPanelColor = p.BgPanel;
+            _settingsService.Settings.Save();
+            ThemeService.Apply(p.Accent, p.BgDeep, p.BgPanel);
+        }
+    }
+
+    [RelayCommand]
+    public void ApplyCustomAccent(string hexColor)
+    {
+        if (string.IsNullOrWhiteSpace(hexColor)) return;
+        AccentColor = hexColor;
+        _settingsService.Settings.AccentColor = hexColor;
+        _settingsService.Settings.Save();
+        ThemeService.Apply(_settingsService.Settings);
     }
 
     public void AddReceiver(ReceiverConfig config)

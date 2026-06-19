@@ -1,6 +1,18 @@
 {
     "chat.tools.terminal.autoApprove": {
         "dotnet clean": true,
-        "dotnet build": true
+        "dotnet build": true,
+        "/^powershell -NoProfile -Command \"Add-Type -AssemblyName System\\.Drawing; \\$bmp = New-Object System\\.Drawing\\.Bitmap 256,256; \\$g = \\[System\\.Drawing\\.Graphics\\]::FromImage\\(\\$bmp\\); \\$g\\.SmoothingMode = \\[System\\.Drawing\\.Drawing2D\\.SmoothingMode\\]::AntiAlias; \\$g\\.Clear\\(\\[System\\.Drawing\\.Color\\]::FromArgb\\(15,17,23\\)\\); \\$brush = New-Object System\\.Drawing\\.SolidBrush \\(\\[System\\.Drawing\\.Color\\]::FromArgb\\(108,99,255\\)\\); \\$g\\.FillEllipse\\(\\$brush, 32,32,192,192\\); \\$font = New-Object System\\.Drawing\\.Font 'Segoe UI', 140, \\[System\\.Drawing\\.FontStyle\\]::Bold, \\[System\\.Drawing\\.GraphicsUnit\\]::Pixel; \\$brush2 = New-Object System\\.Drawing\\.SolidBrush \\(\\[System\\.Drawing\\.Color\\]::White\\); \\$format = New-Object System\\.Drawing\\.StringFormat; \\$format\\.Alignment = 'Center'; \\$format\\.LineAlignment = 'Center'; \\$g\\.DrawString\\('D', \\$font, \\$brush2, \\[System\\.Drawing\\.RectangleF\\]::new\\(0,0,256,256\\), \\$format\\); \\$g\\.Dispose\\(\\); if\\(-not \\(Test-Path Resources\\)\\)\\{ New-Item -ItemType Directory Resources \\| Out-Null \\}; \\$bmp\\.Save\\('Resources\\\\AppIcon\\.png',\\[System\\.Drawing\\.Imaging\\.ImageFormat\\]::Png\\); \\$bmp\\.Dispose\\(\\);\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^python -c \"from pathlib import Path; import sys; from PIL import Image, ImageDraw, ImageFont; p=Path\\('Resources'\\); p\\.mkdir\\(exist_ok=True\\); img=Image\\.new\\('RGBA',\\(256,256\\),\\(15,17,23,255\\)\\); draw=ImageDraw\\.Draw\\(img\\); draw\\.ellipse\\(\\(32,32,224,224\\), fill=\\(108,99,255,255\\)\\); f=None; try: f=ImageFont\\.truetype\\('seguiemj\\.ttf',160\\); except: pass; if not f: f=ImageFont\\.load_default\\(\\); w,h=draw\\.textsize\\('D',font=f\\); draw\\.text\\(\\(\\(256-w\\)/2,\\(256-h\\)/2\\),'D',fill='white',font=f\\); img\\.save\\(p/'AppIcon\\.ico'\\)\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^powershell -NoProfile -Command \"Get-ChildItem -Path \\$env:USERPROFILE\\\\\\.nuget\\\\packages\\\\libvlcsharp\\.wpf -Recurse -Filter 'LibVLCSharp\\.Shared\\.dll' \\| Select-Object -First 1 \\| ForEach-Object \\{ \\$_\\.FullName \\}\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
     }
 }

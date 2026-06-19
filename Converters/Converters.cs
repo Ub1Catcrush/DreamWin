@@ -95,6 +95,19 @@ public class FilesizeMBConverter : IValueConverter
     public object ConvertBack(object value, Type t, object p, CultureInfo c) => throw new NotImplementedException();
 }
 
+public class ZeroToVisibilityConverter : IValueConverter
+{
+    public object Convert(object value, Type t, object p, CultureInfo c)
+    {
+        if (value is int count)
+            return count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (value is long longCount)
+            return longCount == 0 ? Visibility.Visible : Visibility.Collapsed;
+        return Visibility.Collapsed;
+    }
+    public object ConvertBack(object value, Type t, object p, CultureInfo c) => throw new NotImplementedException();
+}
+
 // Compares two bound values for equality and returns a bool. DataTrigger.Value only
 // accepts a literal, not a Binding, so "highlight this item if it equals the currently
 // selected item" can't be expressed as a single DataTrigger with a bound Value — instead
@@ -108,4 +121,73 @@ public class ObjectsEqualConverter : IMultiValueConverter
     public object Convert(object[] values, Type t, object p, CultureInfo c)
         => values.Length == 2 && values[0] != null && values[0].Equals(values[1]);
     public object[] ConvertBack(object value, Type[] types, object p, CultureInfo c) => throw new NotImplementedException();
+}
+
+// ObjectsEqualToBrush: same as ObjectsEqual but returns a Brush so it can be used
+// directly as a BorderBrush without a DataTrigger.
+public class ObjectsEqualToBrushConverter : IMultiValueConverter
+{
+    public Brush? MatchBrush { get; set; }
+    public Brush? NoMatchBrush { get; set; }
+
+    public object? Convert(object[] values, Type t, object p, CultureInfo c)
+    {
+        bool match = values.Length == 2 && values[0] != null && values[0].Equals(values[1]);
+        return match ? MatchBrush : NoMatchBrush;
+    }
+    public object[] ConvertBack(object value, Type[] types, object p, CultureInfo c) => throw new NotImplementedException();
+}
+
+// Converts a service reference string into a BitmapImage picon URL using the receiver base URL.
+// Values[0] = ServiceReference string, Values[1] = ReceiverConfig (or null).
+public class PiconUrlConverter : IMultiValueConverter
+{
+    private static readonly System.Windows.Media.Imaging.BitmapImage _placeholder = MakePlaceholder();
+
+    private static System.Windows.Media.Imaging.BitmapImage MakePlaceholder()
+    {
+        // 1×1 transparent PNG
+        var bmp = new System.Windows.Media.Imaging.BitmapImage();
+        return bmp;
+    }
+
+    public object? Convert(object[] values, Type t, object p, CultureInfo c)
+    {
+        if (values.Length < 2) return null;
+        var sref = values[0] as string;
+        var config = values[1] as DreamWin.Models.ReceiverConfig;
+        if (string.IsNullOrEmpty(sref) || config == null) return null;
+        // Enigma2 picon path: /picon/<serviceref sanitized>.png
+        // Sanitize: trim, remove trailing colons, replace : with _
+        var piconName = sref.Trim().TrimEnd(':').Replace(":", "_");
+        var url = $"{config.BaseUrl}/picon/{piconName}.png";
+        try
+        {
+            var bmp = new System.Windows.Media.Imaging.BitmapImage();
+            bmp.BeginInit();
+            bmp.UriSource = new Uri(url, UriKind.Absolute);
+            bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+            bmp.CreateOptions = System.Windows.Media.Imaging.BitmapCreateOptions.IgnoreImageCache;
+            bmp.DecodePixelWidth = 52;
+            bmp.EndInit();
+            return bmp;
+        }
+        catch { return null; }
+    }
+    public object[] ConvertBack(object value, Type[] types, object p, CultureInfo c) => throw new NotImplementedException();
+}
+
+// EpgEventWidth: pixel width from event duration (3px per minute, min 4px)
+public class EpgEventWidthConverter : IValueConverter
+{
+    public const double PxPerMinute = 3.0;
+    public const double MinWidth = 4.0;
+
+    public object Convert(object value, Type t, object p, CultureInfo c)
+    {
+        if (value is DreamWin.Models.EpgEvent evt)
+            return Math.Max(MinWidth, evt.DurationSec / 60.0 * PxPerMinute - 2);
+        return MinWidth;
+    }
+    public object ConvertBack(object value, Type t, object p, CultureInfo c) => throw new NotImplementedException();
 }

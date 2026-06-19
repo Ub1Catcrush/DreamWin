@@ -1,10 +1,12 @@
 using System.Diagnostics;
+using System.Runtime.Versioning;
 using System.Windows;
 using System.Windows.Input;
 using DreamWin.ViewModels;
 
 namespace DreamWin.Views;
 
+[SupportedOSPlatform("windows")]
 public partial class MainWindow : Window
 {
     private readonly MainViewModel _vm;
@@ -25,6 +27,9 @@ public partial class MainWindow : Window
         InitializeComponent();
         _vm = App.MainVM;
         DataContext = _vm;
+        // Do NOT set MaxHeight/MaxWidth here: it clips content behind the taskbar
+        // when the window is maximized. WindowChrome + WindowState.Maximized already
+        // respects the WorkArea boundary correctly without these overrides.
 
         _vm.Epg.AddTimerRequested += async (_, evt) => await _vm.Timers.AddFromEpgAsync(evt);
 
@@ -79,6 +84,9 @@ public partial class MainWindow : Window
             case AppView.Timers:
                 return new TimersView { DataContext = _vm.Timers };
 
+            case AppView.AutoTimers:
+                return new AutoTimersView { DataContext = _vm.AutoTimers };
+
             case AppView.Movies:
                 _moviesView = new MoviesView { DataContext = _vm.Movies };
                 _vm.Movies.StreamRequested += (_, url) => _moviesView!.PlayStream(url);
@@ -101,7 +109,18 @@ public partial class MainWindow : Window
     private void MinimizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
 
     private void MaximizeClick(object sender, RoutedEventArgs e)
-        => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+    {
+        if (WindowState == WindowState.Maximized)
+        {
+            WindowState = WindowState.Normal;
+            Topmost = false;
+        }
+        else
+        {
+            WindowState = WindowState.Maximized;
+            Topmost = false;
+        }
+    }
 
     private void CloseClick(object sender, RoutedEventArgs e) => Close();
 
@@ -110,12 +129,22 @@ public partial class MainWindow : Window
         if (fullscreen)
         {
             WindowStyle = WindowStyle.None;
+            ResizeMode = ResizeMode.NoResize;
             WindowState = WindowState.Maximized;
+            Topmost = true;
+            // Hide the title bar row in fullscreen
+            if (TitleBarRow != null)
+                TitleBarRow.Height = new System.Windows.GridLength(0);
         }
         else
         {
-            WindowStyle = WindowStyle.None;
+            Topmost = false;
+            ResizeMode = ResizeMode.CanResize;
             WindowState = WindowState.Normal;
+            WindowStyle = WindowStyle.None;
+            // Restore title bar
+            if (TitleBarRow != null)
+                TitleBarRow.Height = new System.Windows.GridLength(44);
         }
     }
 

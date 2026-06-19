@@ -6,6 +6,8 @@
         xmlns:views="clr-namespace:DreamWin.Views"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="{Binding WindowTitle}"
+        Icon="pack://application:,,,/dreamwin.ico"
+        WindowStartupLocation="CenterScreen"
         MinWidth="1100" MinHeight="700"
         Width="1280" Height="800"
         Background="{StaticResource BgDeep}"
@@ -35,7 +37,7 @@
     <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
         <Grid>
             <Grid.RowDefinitions>
-                <RowDefinition Height="44"/>  <!-- Title bar -->
+                <RowDefinition x:Name="TitleBarRow" Height="44"/>  <!-- Title bar -->
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
@@ -165,6 +167,20 @@
                                     <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding CurrentView}" Value="{x:Static vm:AppView.Timers}">
+                                                <Setter Property="Background" Value="{StaticResource Accent}"/>
+                                                <Setter Property="Foreground" Value="White"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+
+                            <Button Content="🔁  AutoTimers" Margin="0,2"
+                                    Command="{Binding NavigateCommand}" CommandParameter="{x:Static vm:AppView.AutoTimers}">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource NavButton}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding CurrentView}" Value="{x:Static vm:AppView.AutoTimers}">
                                                 <Setter Property="Background" Value="{StaticResource Accent}"/>
                                                 <Setter Property="Foreground" Value="White"/>
                                             </DataTrigger>

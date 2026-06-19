@@ -1,3 +1,4 @@
+using System.IO;
 using Newtonsoft.Json;
 
 namespace DreamWin.Models;
@@ -16,13 +17,16 @@ public class Service
     [JsonProperty("servicename")]
     public string ServiceName { get; set; } = "";
 
+    [JsonProperty("icon")]
+    public string? ServiceIcon { get; set; }
+
     public bool IsBouquet => ServiceReference.StartsWith("1:7:") || ServiceReference.StartsWith("1:134:");
 }
 
 public class EpgEvent
 {
     [JsonProperty("id")]
-    public long Id { get; set; }
+    public long? Id { get; set; }
 
     [JsonProperty("begin_timestamp")]
     public long BeginTimestamp { get; set; }
@@ -63,6 +67,9 @@ public class EpgEvent
         }
     }
     public bool IsCurrentlyAiring => DateTime.Now >= BeginTime && DateTime.Now <= EndTime;
+
+    // Set at runtime when building the EPG grid — pixel offset from grid start (3px/min)
+    public double OffsetPx { get; set; }
 }
 
 public class EpgResponse
@@ -154,12 +161,24 @@ public class Movie
 
     public DateTime RecordingDate => DateTimeOffset.FromUnixTimeSeconds(RecordingTime).LocalDateTime;
     public string FilesizeMB => $"{Filesize / 1024 / 1024:0} MB";
+    public string DisplayTitle =>
+        !string.IsNullOrWhiteSpace(Title) ? Title : Path.GetFileNameWithoutExtension(Filename);
+    public string FolderName =>
+        !string.IsNullOrWhiteSpace(Filename)
+            ? Path.GetDirectoryName(Filename)?.Replace("\\", "/") ?? string.Empty
+            : string.Empty;
 }
 
 public class MovieList
 {
     [JsonProperty("movies")]
     public List<Movie> Movies { get; set; } = [];
+
+    [JsonProperty("bookmarks")]
+    public List<string> Bookmarks { get; set; } = [];
+
+    [JsonProperty("directory")]
+    public string Directory { get; set; } = "";
 }
 
 public class CurrentEvent
@@ -208,4 +227,56 @@ public class SignalStatus
 
     [JsonProperty("tunertype")]
     public string TunerType { get; set; } = "";
+}
+
+public class AutoTimer
+{
+    [JsonProperty("id")]
+    public string Id { get; set; } = "";
+
+    [JsonProperty("name")]
+    public string Name { get; set; } = "";
+
+    [JsonProperty("match")]
+    public string Match { get; set; } = "";
+
+    [JsonProperty("enabled")]
+    public bool Enabled { get; set; } = true;
+
+    [JsonProperty("searchType")]
+    public int SearchType { get; set; }
+
+    [JsonProperty("searchCase")]
+    public int SearchCase { get; set; }
+
+    [JsonProperty("justplay")]
+    public int JustPlay { get; set; }
+
+    [JsonProperty("avoidDuplicateDescription")]
+    public int AvoidDuplicates { get; set; }
+
+    [JsonProperty("from")]
+    public string From { get; set; } = "";
+
+    [JsonProperty("to")]
+    public string To { get; set; } = "";
+
+    [JsonProperty("serviceref")]
+    public string ServiceRef { get; set; } = "";
+
+    [JsonProperty("maxduration")]
+    public int MaxDuration { get; set; }
+
+    [JsonProperty("tags")]
+    public string Tags { get; set; } = "";
+
+    public string SearchTypeText => SearchType switch { 0 => "Contains", 1 => "Exact", 2 => "Starts with", 3 => "Ends with", _ => "Contains" };
+    public string JustPlayText => JustPlay == 1 ? "Zap" : "Record";
+    public string StatusText => Enabled ? "Enabled" : "Disabled";
+}
+
+public class AutoTimerList
+{
+    [JsonProperty("autotimers")]
+    public List<AutoTimer> AutoTimers { get; set; } = [];
 }

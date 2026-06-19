@@ -12,33 +12,111 @@
         <Border Grid.Row="0" Background="{StaticResource BgPanel}"
                 BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,12">
             <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <StackPanel Grid.Column="0">
+                <StackPanel Grid.Column="0" Grid.Row="0">
                     <TextBlock Text="EPG Guide" FontSize="18" FontWeight="Bold"
                                Foreground="{StaticResource TextPrimary}"/>
                     <TextBlock Text="{Binding CurrentServiceName}" FontSize="12"
                                Foreground="{StaticResource TextSecondary}"/>
                 </StackPanel>
 
-                <TextBox Grid.Column="1" Style="{StaticResource DarkTextBox}"
-                         Width="240" Margin="0,0,8,0"
+                <TextBox Grid.Column="1" Grid.Row="0" Style="{StaticResource DarkTextBox}"
+                         Width="220" Margin="0,0,8,0" VerticalAlignment="Center"
                          Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}"/>
-                <Button Grid.Column="2" Style="{StaticResource AccentButton}"
-                        Content="Search EPG" Padding="14,8"
+                <Button Grid.Column="2" Grid.Row="0" Style="{StaticResource AccentButton}"
+                        Content="Search EPG" Padding="14,8" Margin="0,0,8,0"
                         Command="{Binding SearchCommand}"/>
+
+                <!-- Grid / List toggle -->
+                <StackPanel Grid.Column="3" Grid.Row="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Padding="10,6" Margin="0,0,4,0"
+                            ToolTip="Channel list view"
+                            Command="{Binding ToggleGridViewCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource BaseButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsGridView}" Value="False">
+                                        <Setter Property="Background" Value="{StaticResource Accent}"/>
+                                        <Setter Property="Foreground" Value="White"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <TextBlock Text="≡ List"/>
+                    </Button>
+                    <Button Padding="10,6"
+                            ToolTip="Timeline grid view (channels × time)"
+                            Command="{Binding ToggleGridViewCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource BaseButton}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsGridView}" Value="True">
+                                        <Setter Property="Background" Value="{StaticResource Accent}"/>
+                                        <Setter Property="Foreground" Value="White"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <TextBlock Text="⊞ Grid"/>
+                    </Button>
+                </StackPanel>
+
+                <!-- Bouquet + Channel row -->
+                <StackPanel Grid.Row="1" Grid.ColumnSpan="4" Orientation="Horizontal" Margin="0,12,0,0">
+                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Height="34">
+                        <ItemsControl ItemsSource="{Binding Bouquets}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Style="{StaticResource IconButton}" Margin="0,0,6,0" Padding="10,4"
+                                            Content="{Binding ServiceName}"
+                                            Command="{Binding DataContext.SelectBouquetCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+
+                    <ComboBox Width="240" Margin="8,0,0,0" Style="{StaticResource DarkComboBox}"
+                              ItemsSource="{Binding Services}"
+                              SelectedItem="{Binding SelectedService}"
+                              DisplayMemberPath="ServiceName"
+                              ToolTip="Select channel"
+                              Visibility="{Binding IsGridView, Converter={StaticResource BoolToVisibilityInverted}}"/>
+
+                    <!-- Grid navigation buttons -->
+                    <StackPanel Orientation="Horizontal" Margin="8,0,0,0"
+                                Visibility="{Binding IsGridView, Converter={StaticResource BoolToVisibility}}">
+                        <Button Style="{StaticResource BaseButton}" Padding="8,5" Margin="0,0,4,0"
+                                Content="◀ -3h" Command="{Binding GridStepBackCommand}"/>
+                        <Button Style="{StaticResource AccentButton}" Padding="8,5" Margin="0,0,4,0"
+                                Content="Now" Command="{Binding GridNowCommand}"/>
+                        <Button Style="{StaticResource BaseButton}" Padding="8,5"
+                                Content="+3h ▶" Command="{Binding GridStepForwardCommand}"/>
+                        <TextBlock VerticalAlignment="Center" Margin="10,0,0,0" FontSize="12"
+                                   Foreground="{StaticResource TextSecondary}"
+                                   Text="{Binding GridStart, StringFormat='{}{0:ddd dd.MM HH:mm}'}"/>
+                    </StackPanel>
+                </StackPanel>
             </Grid>
         </Border>
 
-        <!-- EPG Event List -->
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+        <!-- ── LIST VIEW ─────────────────────────────────────────────────── -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                      Visibility="{Binding IsGridView, Converter={StaticResource BoolToVisibilityInverted}}">
             <StackPanel>
-                <!-- Error banner: surfaces load failures that would otherwise just leave
-                     the EPG list looking silently empty. -->
                 <Border Margin="12,12,12,0" Padding="12,8" CornerRadius="6"
                         Background="#332E3A" BorderBrush="{StaticResource AccentRed}" BorderThickness="1"
                         Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}">
@@ -47,92 +125,84 @@
                 </Border>
 
                 <ItemsControl ItemsSource="{Binding Events}" Padding="12">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Border Margin="0,0,0,6" CornerRadius="8"
-                                Background="{StaticResource BgCard}"
-                                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
-                            <Border.Style>
-                                <Style TargetType="Border">
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsCurrentlyAiring}" Value="True">
-                                            <Setter Property="BorderBrush" Value="{StaticResource Accent}"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Border.Style>
-                            <Grid Margin="14,10">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="90"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-
-                                <!-- Time -->
-                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding TimeRange}"
-                                               FontSize="12" FontWeight="Medium"
-                                               Foreground="{StaticResource Accent}"/>
-                                    <TextBlock Text="{Binding Duration}"
-                                               FontSize="10" Foreground="{StaticResource TextMuted}"/>
-                                </StackPanel>
-
-                                <!-- Content -->
-                                <StackPanel Grid.Column="1" Margin="12,0">
-                                    <StackPanel Orientation="Horizontal">
-                                        <Border CornerRadius="3" Padding="5,2" Margin="0,0,8,0"
-                                                Visibility="{Binding IsCurrentlyAiring, Converter={StaticResource BoolToVisibility}}">
-                                            <Border.Background>
-                                                <SolidColorBrush Color="#EF4444" Opacity="0.2"/>
-                                            </Border.Background>
-                                            <TextBlock Text="LIVE" FontSize="9" FontWeight="Bold"
-                                                       Foreground="{StaticResource AccentRed}"/>
-                                        </Border>
-                                        <TextBlock Text="{Binding Title}"
-                                                   FontSize="13" FontWeight="SemiBold"
-                                                   Foreground="{StaticResource TextPrimary}"/>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Margin="0,0,0,6" CornerRadius="8"
+                                    Background="{StaticResource BgCard}"
+                                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsCurrentlyAiring}" Value="True">
+                                                <Setter Property="BorderBrush" Value="{StaticResource Accent}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <Grid Margin="14,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="90"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding TimeRange}" FontSize="12" FontWeight="Medium"
+                                                   Foreground="{StaticResource Accent}"/>
+                                        <TextBlock Text="{Binding Duration}" FontSize="10" Foreground="{StaticResource TextMuted}"/>
                                     </StackPanel>
-                                    <TextBlock Text="{Binding ServiceName}"
-                                               FontSize="11" Foreground="{StaticResource Accent}"
-                                               Margin="0,1,0,0"
-                                               Visibility="{Binding ServiceName, Converter={StaticResource NullToVisibility}}"/>
-                                    <TextBlock Text="{Binding ShortDesc}"
-                                               FontSize="11" Foreground="{StaticResource TextMuted}"
-                                               TextTrimming="CharacterEllipsis"
-                                               Margin="0,3,0,0"/>
-                                    <!-- Progress bar for current -->
-                                    <Border Height="2" Background="{StaticResource BgPanel}" CornerRadius="1"
-                                            Margin="0,6,0,0"
-                                            Visibility="{Binding IsCurrentlyAiring, Converter={StaticResource BoolToVisibility}}">
-                                        <Border HorizontalAlignment="Left" Background="{StaticResource Accent}"
-                                                CornerRadius="1">
-                                            <Border.Width>
-                                                <MultiBinding Converter="{StaticResource ProgressToWidth}">
-                                                    <Binding Path="ProgressPercent"/>
-                                                    <Binding Path="ActualWidth" RelativeSource="{RelativeSource AncestorType=Border}"/>
-                                                </MultiBinding>
-                                            </Border.Width>
+                                    <StackPanel Grid.Column="1" Margin="12,0">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Border CornerRadius="3" Padding="5,2" Margin="0,0,8,0"
+                                                    Visibility="{Binding IsCurrentlyAiring, Converter={StaticResource BoolToVisibility}}">
+                                                <Border.Background><SolidColorBrush Color="#EF4444" Opacity="0.2"/></Border.Background>
+                                                <TextBlock Text="LIVE" FontSize="9" FontWeight="Bold" Foreground="{StaticResource AccentRed}"/>
+                                            </Border>
+                                            <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextPrimary}"/>
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding ServiceName}" FontSize="11" Foreground="{StaticResource Accent}"
+                                                   Margin="0,1,0,0"
+                                                   Visibility="{Binding ServiceName, Converter={StaticResource NullToVisibility}}"/>
+                                        <TextBlock Text="{Binding ShortDesc}" FontSize="11" Foreground="{StaticResource TextMuted}"
+                                                   TextTrimming="CharacterEllipsis" Margin="0,3,0,0"/>
+                                        <Border Height="2" Background="{StaticResource BgPanel}" CornerRadius="1" Margin="0,6,0,0"
+                                                Visibility="{Binding IsCurrentlyAiring, Converter={StaticResource BoolToVisibility}}">
+                                            <Border HorizontalAlignment="Left" Background="{StaticResource Accent}" CornerRadius="1">
+                                                <Border.Width>
+                                                    <MultiBinding Converter="{StaticResource ProgressToWidth}">
+                                                        <Binding Path="ProgressPercent"/>
+                                                        <Binding Path="ActualWidth" RelativeSource="{RelativeSource AncestorType=Border}"/>
+                                                    </MultiBinding>
+                                                </Border.Width>
+                                            </Border>
                                         </Border>
-                                    </Border>
-                                </StackPanel>
-
-                                <!-- Add Timer Button -->
-                                <Button Grid.Column="2" Style="{StaticResource AccentButton}"
-                                        Content="+ Timer" Padding="10,6" FontSize="11" VerticalAlignment="Center"
-                                        Command="{Binding DataContext.RequestAddTimerCommand,
-                                                  RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                        CommandParameter="{Binding}"/>
-                            </Grid>
-                        </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
+                                    </StackPanel>
+                                    <Button Grid.Column="2" Style="{StaticResource AccentButton}"
+                                            Content="+ Timer" Padding="10,6" FontSize="11" VerticalAlignment="Center"
+                                            Command="{Binding DataContext.RequestAddTimerCommand,
+                                                      RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}"/>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </StackPanel>
         </ScrollViewer>
 
-        <!-- Empty state -->
+        <!-- Empty state (list view) -->
         <StackPanel Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center"
-                    Visibility="{Binding Events.Count, Converter={StaticResource NullToVisibility}}">
+                    Visibility="{Binding IsGridView, Converter={StaticResource BoolToVisibilityInverted}}">
+            <StackPanel.Style>
+                <Style TargetType="StackPanel">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding Events.Count}" Value="0">
+                            <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </StackPanel.Style>
             <TextBlock Text="📅" FontSize="56" HorizontalAlignment="Center" Opacity="0.2"/>
             <TextBlock Text="Select a channel from Live TV to view the EPG"
                        Foreground="{StaticResource TextMuted}" FontSize="14"
@@ -141,5 +211,125 @@
                        Foreground="{StaticResource TextMuted}" FontSize="12"
                        HorizontalAlignment="Center" Margin="0,4,0,0"/>
         </StackPanel>
+
+        <!-- ── GRID VIEW ──────────────────────────────────────────────────── -->
+        <Grid Grid.Row="1" Visibility="{Binding IsGridView, Converter={StaticResource BoolToVisibility}}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- Loading indicator -->
+            <Border Background="#80000000" Panel.ZIndex="10"
+                    Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}">
+                <TextBlock Text="{Binding StatusMessage}" Foreground="White" FontSize="14"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+
+            <!-- The EPG grid is a ScrollViewer wrapping an ItemsControl of rows.
+                 Each row = channel name label + horizontal strip of time blocks. -->
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <!-- Time header row -->
+                    <Grid Height="28" Margin="0,0,0,2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="160"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="0" Background="{StaticResource BgPanel}"
+                                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,1"/>
+                        <!-- Time ruler - drawn via code-behind in EpgView.xaml.cs -->
+                        <ItemsControl Grid.Column="1" x:Name="TimeRuler"
+                                      ItemsSource="{Binding GridTimeSlots}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Width="180" Background="{StaticResource BgPanel}"
+                                            BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,1">
+                                        <TextBlock Text="{Binding}" FontSize="10" Foreground="{StaticResource TextSecondary}"
+                                                   Margin="4,6,0,0"/>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Grid>
+
+                    <!-- Channel rows -->
+                    <ItemsControl ItemsSource="{Binding GridRows}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Height="44">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="160"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Channel name -->
+                                    <Border Grid.Column="0" Background="{StaticResource BgPanel}"
+                                            BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,1"
+                                            Padding="8,0">
+                                        <TextBlock Text="{Binding Service.ServiceName}"
+                                                   FontSize="11" VerticalAlignment="Center"
+                                                   Foreground="{StaticResource TextPrimary}"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                    </Border>
+
+                                    <!-- EPG event blocks -->
+                                    <Border Grid.Column="1" Background="{StaticResource BgDeep}"
+                                            BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1"
+                                            ClipToBounds="True">
+                                        <ItemsControl ItemsSource="{Binding Events}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <Canvas MinWidth="540"/>
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemContainerStyle>
+                                                <Style TargetType="ContentPresenter">
+                                                    <Setter Property="Canvas.Left"
+                                                            Value="{Binding OffsetPx}"/>
+                                                    <Setter Property="Width"
+                                                            Value="{Binding ., Converter={StaticResource EpgEventWidth}}"/>
+                                                    <Setter Property="Height" Value="40"/>
+                                                    <Setter Property="Canvas.Top" Value="2"/>
+                                                </Style>
+                                            </ItemsControl.ItemContainerStyle>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Margin="1,0" CornerRadius="3" ClipToBounds="True"
+                                                            ToolTip="{Binding Title}"
+                                                            BorderThickness="1">
+                                                        <Border.Style>
+                                                            <Style TargetType="Border">
+                                                                <Setter Property="Background" Value="{StaticResource BgCard}"/>
+                                                                <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsCurrentlyAiring}" Value="True">
+                                                                        <Setter Property="Background" Value="{StaticResource BgHover}"/>
+                                                                        <Setter Property="BorderBrush" Value="{StaticResource Accent}"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Border.Style>
+                                                        <StackPanel Margin="4,2" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding Title}" FontSize="11"
+                                                                       Foreground="{StaticResource TextPrimary}"
+                                                                       TextTrimming="CharacterEllipsis" FontWeight="Medium"/>
+                                                            <TextBlock Text="{Binding TimeRange}" FontSize="9"
+                                                                       Foreground="{StaticResource TextMuted}"/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </Border>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
     </Grid>
 </UserControl>
