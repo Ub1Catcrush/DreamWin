@@ -11,6 +11,7 @@
     <Authors>DreamWin</Authors>
     <Description>Enigma2 Windows Client</Description>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <ApplicationIcon>dreamwin.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="LibVLCSharp.WPF" Version="3.9.0" />
