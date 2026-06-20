@@ -85,6 +85,7 @@
                          ItemContainerStyle="{StaticResource DarkListBoxItem}"
                          ItemsSource="{Binding Services}"
                          SelectedItem="{Binding SelectedService}"
+                         x:Name="ChannelListBox"
                          SelectionChanged="ChannelList_SelectionChanged"
                          Padding="6,0,6,6">
                     <ListBox.ItemTemplate>
@@ -114,11 +115,28 @@
                                                Foreground="{StaticResource TextPrimary}"
                                                TextTrimming="CharacterEllipsis"/>
                                 </StackPanel>
-                                <Button Grid.Column="2" Style="{StaticResource IconButton}"
-                                        Content="▶" FontSize="10" ToolTip="Play"
-                                        Command="{Binding DataContext.SelectServiceCommand,
-                                                  RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                        CommandParameter="{Binding}"/>
+                                <!-- NOW PLAYING indicator -->
+                                <Border Grid.Column="2" CornerRadius="4" Padding="5,2" Margin="4,0"
+                                        Background="{StaticResource Accent}" VerticalAlignment="Center">
+                                    <TextBlock Text="▶ NOW" FontSize="9" FontWeight="Bold" Foreground="White"/>
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Value="True">
+                                                    <DataTrigger.Binding>
+                                                        <MultiBinding Converter="{StaticResource ObjectsEqual}">
+                                                            <Binding Path="."/>
+                                                            <Binding Path="DataContext.StreamingService"
+                                                                     RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                                                        </MultiBinding>
+                                                    </DataTrigger.Binding>
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                </Border>
                             </Grid>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
@@ -272,6 +290,17 @@
                                     <Button Style="{StaticResource IconButton}"
                                             Command="{Binding ToggleFullscreenCommand}"
                                             Content="⛶" ToolTip="Fullscreen"/>
+                                    <!-- Signal quality -->
+                                    <Border Margin="8,0,0,0" Padding="8,3" CornerRadius="4"
+                                            Background="#1A1D27"
+                                            Visibility="{Binding HasSignal, Converter={StaticResource BoolToVisibility}}"
+                                            ToolTip="Signal strength (SNR / AGC)">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="📶" FontSize="11" Margin="0,0,4,0"/>
+                                            <TextBlock Text="{Binding SignalLabel}" FontSize="11"
+                                                       Foreground="{StaticResource TextSecondary}"/>
+                                        </StackPanel>
+                                    </Border>
                                 </StackPanel>
                             </Grid>
                         </Border>

@@ -126,6 +126,24 @@
                         </StackPanel>
                     </Grid>
 
+                    <!-- HTTPS options -->
+                    <StackPanel Margin="0,4,0,12">
+                        <CheckBox x:Name="FieldUseHttps" Content="Use HTTPS for web API"
+                                  Foreground="{StaticResource TextSecondary}" Margin="0,0,0,6"/>
+                        <StackPanel Orientation="Horizontal">
+                            <CheckBox x:Name="FieldAcceptSelfSigned"
+                                      Content="Accept self-signed certificate"
+                                      Foreground="{StaticResource TextSecondary}"/>
+                            <Border Background="#2D2016" BorderBrush="#F97316" BorderThickness="1"
+                                    CornerRadius="4" Padding="6,2" Margin="8,0,0,0"
+                                    Visibility="{Binding IsChecked, ElementName=FieldAcceptSelfSigned,
+                                                 Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="⚠ Certificate validation disabled"
+                                           FontSize="10" Foreground="#F97316"/>
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
+
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                         <Button Style="{StaticResource BaseButton}" Padding="14,8" Margin="0,0,8,0"
                                 Content="Cancel" Click="CancelFormClick"/>

@@ -39,6 +39,8 @@ public partial class SettingsView : UserControl
             FieldStreamPort.Text = config.StreamingPort.ToString();
             FieldUsername.Text = config.Username ?? "";
             FieldPassword.Password = config.Password ?? "";
+            FieldUseHttps.IsChecked = config.UseHttps;
+            FieldAcceptSelfSigned.IsChecked = config.AcceptSelfSignedCert;
             ReceiverForm.Visibility = Visibility.Visible;
         }
     }
@@ -76,6 +78,8 @@ public partial class SettingsView : UserControl
             _editingReceiver.StreamingPort = int.TryParse(FieldStreamPort.Text, out var sp) ? sp : 8001;
             _editingReceiver.Username = string.IsNullOrWhiteSpace(FieldUsername.Text) ? null : FieldUsername.Text;
             _editingReceiver.Password = string.IsNullOrWhiteSpace(FieldPassword.Password) ? null : FieldPassword.Password;
+            _editingReceiver.UseHttps = FieldUseHttps.IsChecked == true;
+            _editingReceiver.AcceptSelfSignedCert = FieldAcceptSelfSigned.IsChecked == true;
             VM?.UpdateReceiver(_editingReceiver);
         }
         else
@@ -88,6 +92,8 @@ public partial class SettingsView : UserControl
                 StreamingPort = int.TryParse(FieldStreamPort.Text, out var sp) ? sp : 8001,
                 Username = string.IsNullOrWhiteSpace(FieldUsername.Text) ? null : FieldUsername.Text,
                 Password = string.IsNullOrWhiteSpace(FieldPassword.Password) ? null : FieldPassword.Password,
+                UseHttps = FieldUseHttps.IsChecked == true,
+                AcceptSelfSignedCert = FieldAcceptSelfSigned.IsChecked == true,
             };
             VM?.AddReceiver(config);
         }
@@ -110,6 +116,8 @@ public partial class SettingsView : UserControl
         FieldStreamPort.Text = "8001";
         FieldUsername.Text = "";
         FieldPassword.Password = "";
+        FieldUseHttps.IsChecked = false;
+        FieldAcceptSelfSigned.IsChecked = false;
     }
 
     private void UpdateSettingChanged(object sender, RoutedEventArgs e)

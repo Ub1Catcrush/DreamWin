@@ -49,22 +49,27 @@ public partial class EpgViewModel : BaseViewModel
 
     public async Task LoadAsync()
     {
+        var ct = NewLoadToken();
         await RunAsync(async () =>
         {
             var bouquets = await _api.GetBouquetsAsync();
-            Bouquets.Clear();
-            foreach (var b in bouquets.Where(b => b.IsBouquet))
-                Bouquets.Add(b);
+            ct.ThrowIfCancellationRequested();
+            await OnUiAsync(() => {
+                Bouquets.Clear();
+                foreach (var b in bouquets.Where(b => b.IsBouquet))
+                    Bouquets.Add(b);
+            });
 
             if (Bouquets.Any())
                 await SelectBouquetAsync(Bouquets.First());
         }, "Loading EPG guide...");
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(IsNotBusy))]
     private async Task SelectBouquetAsync(Service bouquet)
     {
         SelectedBouquet = bouquet;
+        var ct = NewLoadToken();
         await RunAsync(async () =>
         {
             var services = await _api.GetServicesAsync(bouquet.ServiceReference);
@@ -86,6 +91,25 @@ public partial class EpgViewModel : BaseViewModel
             _ = SelectServiceAsync(value);
     }
 
+    // EPG cache: keyed by service reference, expires after 5 minutes
+    private readonly Dictionary<string, (List<EpgEvent> Events, DateTime LoadedAt)> _epgCache = new();
+    private static readonly TimeSpan EpgCacheTtl = TimeSpan.FromMinutes(5);
+
+    private async Task<List<EpgEvent>> GetEpgCachedAsync(string serviceRef)
+    {
+        if (_epgCache.TryGetValue(serviceRef, out var cached) &&
+            DateTime.Now - cached.LoadedAt < EpgCacheTtl)
+        {
+            Debug.WriteLine($"[EpgViewModel] Cache hit for {serviceRef}");
+            return cached.Events;
+        }
+        var events = await _api.GetEpgForServiceAsync(serviceRef, 48);
+        _epgCache[serviceRef] = (events, DateTime.Now);
+        return events;
+    }
+
+    public void ClearEpgCache() => _epgCache.Clear();
+
     [RelayCommand]
     private async Task SelectServiceAsync(Service service)
     {
@@ -97,12 +121,17 @@ public partial class EpgViewModel : BaseViewModel
     {
         CurrentServiceName = serviceName;
         IsSearchMode = false;
+        var ct = NewLoadToken();
         await RunAsync(async () =>
         {
-            var events = await _api.GetEpgForServiceAsync(serviceRef, 48);
-            Events.Clear();
-            foreach (var e in events.OrderBy(e => e.BeginTimestamp))
-                Events.Add(e);
+            var events = await GetEpgCachedAsync(serviceRef);
+            ct.ThrowIfCancellationRequested();
+            await OnUiAsync(() =>
+            {
+                Events.Clear();
+                foreach (var e in events.OrderBy(e => e.BeginTimestamp))
+                    Events.Add(e);
+            });
             Debug.WriteLine($"[EpgViewModel] loaded {Events.Count} events for {serviceName}");
         }, $"Loading EPG for {serviceName}...");
     }
@@ -166,7 +195,8 @@ public partial class EpgViewModel : BaseViewModel
                 .GroupBy(e => e.ServiceRef)
                 .ToDictionary(g => g.Key, g => g.OrderBy(e => e.BeginTimestamp).ToList());
 
-            GridRows.Clear();
+            await OnUiAsync(() => GridRows.Clear());
+            var gridRowsTemp = new System.Collections.Generic.List<EpgGridRow>();
             foreach (var svc in Services)
             {
                 var evts = grouped.TryGetValue(svc.ServiceReference, out var list) ? list : [];
@@ -179,8 +209,9 @@ public partial class EpgViewModel : BaseViewModel
                     GridStart = GridStart,
                     Events = evts
                 };
-                GridRows.Add(row);
+                gridRowsTemp.Add(row);
             }
+            await OnUiAsync(() => { foreach (var r in gridRowsTemp) GridRows.Add(r); });
         }, "Loading EPG grid...");
     }
 }
@@ -221,6 +252,11 @@ public partial class TimersViewModel : BaseViewModel
     [RelayCommand]
     private async Task DeleteTimerAsync(Models.Timer timer)
     {
+        var r = System.Windows.MessageBox.Show(
+            $"Delete timer '{timer.Name}'?\n\nThis cannot be undone.",
+            "Confirm Delete", System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Warning);
+        if (r != System.Windows.MessageBoxResult.Yes) return;
         await RunAsync(async () =>
         {
             await _api.DeleteTimerAsync(timer.ServiceRef, timer.Begin, timer.End);
@@ -325,18 +361,30 @@ public partial class MoviesViewModel : BaseViewModel
     [ObservableProperty] private string _currentStreamUrl = "";
     [ObservableProperty] private bool _isPlaying;
 
+    public string TotalSizeText => Movies.Count == 0 ? "" :
+        $"{Movies.Count} recordings · {Movies.Sum(m => m.Filesize) / 1024.0 / 1024 / 1024:0.0} GB";
+
+    partial void OnMoviesChanged(ObservableCollection<Movie> value) =>
+        OnPropertyChanged(nameof(TotalSizeText));
+
     public event EventHandler<string>? StreamRequested;
 
-    public MoviesViewModel(Enigma2Service api) => _api = api;
+    public MoviesViewModel(Enigma2Service api)
+    {
+        _api = api;
+        Movies.CollectionChanged += (_, _) => OnPropertyChanged(nameof(TotalSizeText));
+    }
 
     public async Task LoadAsync()
     {
         await RunAsync(async () =>
         {
             var movies = await _api.GetMoviesAsync();
-            Movies.Clear();
-            foreach (var m in movies.OrderByDescending(m => m.RecordingTime))
-                Movies.Add(m);
+            await OnUiAsync(() => {
+                Movies.Clear();
+                foreach (var m in movies.OrderByDescending(m => m.RecordingTime))
+                    Movies.Add(m);
+            });
             Debug.WriteLine($"[MoviesViewModel] loaded {Movies.Count} recordings");
         }, "Loading recordings...");
     }
@@ -354,6 +402,11 @@ public partial class MoviesViewModel : BaseViewModel
     [RelayCommand]
     private async Task DeleteMovieAsync(Movie movie)
     {
+        var r = System.Windows.MessageBox.Show(
+            $"Permanently delete recording:\n'{movie.Title}'?\n\nThis cannot be undone.",
+            "Confirm Delete Recording", System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Warning);
+        if (r != System.Windows.MessageBoxResult.Yes) return;
         await RunAsync(async () =>
         {
             await _api.DeleteMovieAsync(movie.ServiceReference);
@@ -394,10 +447,12 @@ public partial class AutoTimersViewModel : BaseViewModel
         await RunAsync(async () =>
         {
             var timers = await _api.GetAutoTimersAsync();
-            AutoTimers.Clear();
-            PluginAvailable = true;
-            foreach (var t in timers.OrderBy(t => t.Name))
-                AutoTimers.Add(t);
+            await OnUiAsync(() => {
+                AutoTimers.Clear();
+                PluginAvailable = true;
+                foreach (var t in timers.OrderBy(t => t.Name))
+                    AutoTimers.Add(t);
+            });
         }, "Loading AutoTimers...");
         // If no timers and no error, plugin may not be installed
     }
@@ -475,6 +530,11 @@ public partial class AutoTimersViewModel : BaseViewModel
     [RelayCommand]
     private async Task DeleteAutoTimerAsync(AutoTimer timer)
     {
+        var r = System.Windows.MessageBox.Show(
+            $"Delete AutoTimer rule '{timer.Name}'?",
+            "Confirm Delete", System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Question);
+        if (r != System.Windows.MessageBoxResult.Yes) return;
         await RunAsync(async () =>
         {
             await _api.DeleteAutoTimerAsync(timer.Id);

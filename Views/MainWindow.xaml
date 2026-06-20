@@ -231,7 +231,29 @@
                                            FontSize="10" Foreground="{StaticResource TextMuted}" Margin="4,0,0,6"/>
                                 <Button Content="⏻  Standby" Style="{StaticResource BaseButton}"
                                         Command="{Binding StandbyCommand}" FontSize="11"
-                                        HorizontalAlignment="Stretch"/>
+                                        HorizontalAlignment="Stretch" Margin="0,0,0,6"/>
+                                <!-- Sleep timer -->
+                                <TextBlock Text="{Binding SleepTimerLabel}"
+                                           FontSize="10" Foreground="{StaticResource Accent}"
+                                           HorizontalAlignment="Center" Margin="0,0,0,4"
+                                           Visibility="{Binding SleepTimerLabel, Converter={StaticResource NullToVisibility}}"/>
+                                <WrapPanel HorizontalAlignment="Center">
+                                    <TextBlock Text="Sleep:" FontSize="10" Foreground="{StaticResource TextMuted}"
+                                               VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                    <Button Style="{StaticResource IconButton}" Padding="4,2" FontSize="10"
+                                            Content="30m" Margin="2,0"
+                                            Command="{Binding SetSleepTimerCommand}" CommandParameter="30"/>
+                                    <Button Style="{StaticResource IconButton}" Padding="4,2" FontSize="10"
+                                            Content="60m" Margin="2,0"
+                                            Command="{Binding SetSleepTimerCommand}" CommandParameter="60"/>
+                                    <Button Style="{StaticResource IconButton}" Padding="4,2" FontSize="10"
+                                            Content="90m" Margin="2,0"
+                                            Command="{Binding SetSleepTimerCommand}" CommandParameter="90"/>
+                                    <Button Style="{StaticResource IconButton}" Padding="4,2" FontSize="10"
+                                            Content="✕" Margin="2,0" ToolTip="Cancel sleep timer"
+                                            Command="{Binding CancelSleepTimerCommand}"
+                                            Visibility="{Binding SleepTimerMinutes, Converter={StaticResource ZeroToVisibility}}"/>
+                                </WrapPanel>
                             </StackPanel>
                         </Border>
                     </Grid>

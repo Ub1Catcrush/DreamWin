@@ -139,17 +139,10 @@ public class ObjectsEqualToBrushConverter : IMultiValueConverter
 }
 
 // Converts a service reference string into a BitmapImage picon URL using the receiver base URL.
-// Values[0] = ServiceReference string, Values[1] = ReceiverConfig (or null).
+// Caches results in memory for the session lifetime to avoid repeated HTTP fetches on scroll.
 public class PiconUrlConverter : IMultiValueConverter
 {
-    private static readonly System.Windows.Media.Imaging.BitmapImage _placeholder = MakePlaceholder();
-
-    private static System.Windows.Media.Imaging.BitmapImage MakePlaceholder()
-    {
-        // 1×1 transparent PNG
-        var bmp = new System.Windows.Media.Imaging.BitmapImage();
-        return bmp;
-    }
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, System.Windows.Media.Imaging.BitmapImage?> _cache = new();
 
     public object? Convert(object[] values, Type t, object p, CultureInfo c)
     {
@@ -157,23 +150,31 @@ public class PiconUrlConverter : IMultiValueConverter
         var sref = values[0] as string;
         var config = values[1] as DreamWin.Models.ReceiverConfig;
         if (string.IsNullOrEmpty(sref) || config == null) return null;
-        // Enigma2 picon path: /picon/<serviceref sanitized>.png
-        // Sanitize: trim, remove trailing colons, replace : with _
+
         var piconName = sref.Trim().TrimEnd(':').Replace(":", "_");
         var url = $"{config.BaseUrl}/picon/{piconName}.png";
+
+        return _cache.GetOrAdd(url, LoadBitmap);
+    }
+
+    private static System.Windows.Media.Imaging.BitmapImage? LoadBitmap(string url)
+    {
         try
         {
             var bmp = new System.Windows.Media.Imaging.BitmapImage();
             bmp.BeginInit();
             bmp.UriSource = new Uri(url, UriKind.Absolute);
             bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
-            bmp.CreateOptions = System.Windows.Media.Imaging.BitmapCreateOptions.IgnoreImageCache;
             bmp.DecodePixelWidth = 52;
             bmp.EndInit();
+            bmp.Freeze();
             return bmp;
         }
         catch { return null; }
     }
+
+    public static void ClearCache() => _cache.Clear();
+
     public object[] ConvertBack(object value, Type[] types, object p, CultureInfo c) => throw new NotImplementedException();
 }
 

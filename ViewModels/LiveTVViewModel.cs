@@ -25,7 +25,40 @@ public partial class LiveTVViewModel : BaseViewModel
     [ObservableProperty] private bool _isFullscreen;
     [ObservableProperty] private AudioTrackInfo? _selectedAudioTrack;
     [ObservableProperty] private ObservableCollection<AudioTrackInfo> _audioTracks = [];
+    [ObservableProperty] private Service? _streamingService;  // channel currently playing (may differ from SelectedService)
+    [ObservableProperty] private int _signalSnr;
+    [ObservableProperty] private int _signalAgc;
+    [ObservableProperty] private bool _hasSignal;
     [ObservableProperty] private string _searchText = "";
+
+    private System.Windows.Threading.DispatcherTimer? _signalTimer;
+
+    public string SignalLabel => HasSignal ? $"SNR {SignalSnr}%  AGC {SignalAgc}%" : "";
+
+    partial void OnSignalSnrChanged(int value) => OnPropertyChanged(nameof(SignalLabel));
+    partial void OnSignalAgcChanged(int value) => OnPropertyChanged(nameof(SignalLabel));
+
+    private void StartSignalPolling()
+    {
+        _signalTimer?.Stop();
+        _signalTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(5)
+        };
+        _signalTimer.Tick += async (_, _) =>
+        {
+            var sig = await _api.GetSignalAsync();
+            if (sig != null)
+            {
+                SignalSnr = sig.Snr;
+                SignalAgc = sig.Agc;
+                HasSignal = sig.Snr > 0;
+            }
+        };
+        _signalTimer.Start();
+    }
+
+    public void StopSignalPolling() => _signalTimer?.Stop();
 
     public event EventHandler<string>? StreamRequested;
     public event EventHandler<bool>? FullscreenRequested;
@@ -102,7 +135,9 @@ public partial class LiveTVViewModel : BaseViewModel
             var url = _api.GetStreamUrl(service.ServiceReference);
             CurrentStreamUrl = url;
             IsPlaying = true;
+            StreamingService = service;
             StreamRequested?.Invoke(this, url);
+            StartSignalPolling();
         });
     }
 

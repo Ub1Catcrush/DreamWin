@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Net.Security;
 using System.Text;
 using System.Web;
 using Newtonsoft.Json;
@@ -9,23 +10,59 @@ using DreamWin.Models;
 
 namespace DreamWin.Services;
 
-public class Enigma2Service
+public class Enigma2Service : IDisposable
 {
-    private HttpClient _http = new();
+    private HttpClient? _http;
+    private HttpClientHandler? _handler;
     private ReceiverConfig? _config;
+    private Guid _lastConfigId = Guid.Empty;
+    private bool _disposed;
 
     public ReceiverConfig? CurrentConfig => _config;
 
     public void SetReceiver(ReceiverConfig config)
     {
-        _config = config;
-        _http = new HttpClient();
-        _http.Timeout = TimeSpan.FromSeconds(8);
-        if (!string.IsNullOrEmpty(config.Username))
+        // Only rebuild if the config actually changed (avoids socket exhaustion on rapid calls)
+        if (_lastConfigId == config.Id && _http != null) return;
+
+        _http?.Dispose();
+        _handler?.Dispose();
+
+        _handler = new HttpClientHandler();
+
+        // SEC-04: Opt-in per-receiver self-signed cert acceptance
+        if (config.AcceptSelfSignedCert)
         {
-            var credentials = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{config.Username}:{config.Password}"));
-            _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", credentials);
+            _handler.ServerCertificateCustomValidationCallback =
+                (_, cert, _, errors) =>
+                    errors == SslPolicyErrors.None ||
+                    errors == SslPolicyErrors.RemoteCertificateNameMismatch ||
+                    errors == SslPolicyErrors.RemoteCertificateChainErrors;
         }
+
+        _http = new HttpClient(_handler, disposeHandler: false)
+        {
+            Timeout = TimeSpan.FromSeconds(8)
+        };
+
+        if (!string.IsNullOrEmpty(config.Username) && !string.IsNullOrEmpty(config.Password))
+        {
+            var cred = Convert.ToBase64String(
+                Encoding.ASCII.GetBytes($"{config.Username}:{config.Password}"));
+            _http.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Basic", cred);
+        }
+
+        _config = config;
+        _lastConfigId = config.Id;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _http?.Dispose();
+        _handler?.Dispose();
     }
 
     private readonly JsonSerializerSettings _jsonSettings = new JsonSerializerSettings
@@ -79,16 +116,32 @@ public class Enigma2Service
         return JsonConvert.DeserializeObject<T>(response, _jsonSettings);
     }
 
+    private static string SanitizeUrl(string url)
+    {
+        // Strip any embedded user:pass@ from URL before logging
+        try
+        {
+            var u = new Uri(url);
+            return u.GetComponents(UriComponents.SchemeAndServer | UriComponents.PathAndQuery,
+                UriFormat.UriEscaped);
+        }
+        catch { return "[invalid url]"; }
+    }
+
     private async Task<string> GetRawResponseAsync(string endpoint, Dictionary<string, string>? query = null)
     {
         if (_config == null) throw new InvalidOperationException("No receiver configured");
+        if (_http == null) throw new InvalidOperationException("HttpClient not initialised — call SetReceiver first");
+
         var url = $"{_config.BaseUrl}/api/{endpoint}";
         if (query?.Count > 0)
         {
             var qs = string.Join("&", query.Select(kv => $"{kv.Key}={HttpUtility.UrlEncode(kv.Value)}"));
             url += "?" + qs;
         }
-        Debug.WriteLine($"[Enigma2Service] GET {url}");
+#if DEBUG
+        Debug.WriteLine($"[Enigma2Service] GET {SanitizeUrl(url)}");
+#endif
         using var cts = new CancellationTokenSource(_http.Timeout);
         try
         {
@@ -96,7 +149,7 @@ public class Enigma2Service
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[Enigma2Service] HTTP error for {url}: {ex.Message}");
+            Debug.WriteLine($"[Enigma2Service] HTTP error for {SanitizeUrl(url)}: {ex.Message}");
             throw;
         }
     }
@@ -264,7 +317,22 @@ public class Enigma2Service
             ["begin"] = begin.ToString(),
             ["end"] = end.ToString()
         });
-        // Fallback: if receiver doesn't support bRef timewindow, do sequential per service
+
+        // Fallback: receiver doesn't support bRef time-window — fetch now+next per service in parallel
+        if (events.Count == 0)
+        {
+            var services = await GetServicesAsync(bouquetRef);
+            var semaphore = new SemaphoreSlim(4); // max 4 concurrent requests
+            var tasks = services.Take(50).Select(async svc =>
+            {
+                await semaphore.WaitAsync();
+                try { return await GetEpgForServiceAsync(svc.ServiceReference, hours); }
+                finally { semaphore.Release(); }
+            });
+            var results = await Task.WhenAll(tasks);
+            events = results.SelectMany(r => r).ToList();
+        }
+
         return events;
     }
 
@@ -339,8 +407,18 @@ public class Enigma2Service
     }
 
     // ─── Movies ──────────────────────────────────────────────────────
-    public async Task<List<Movie>> GetMoviesAsync(string? location = null)
+    public async Task<List<Movie>> GetMoviesAsync(string? location = null, int depth = 0, HashSet<string>? visited = null)
     {
+        const int MaxDepth = 2;
+        visited ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (depth > MaxDepth) return [];
+
+        if (!string.IsNullOrEmpty(location))
+        {
+            if (!visited.Add(location)) return []; // already scanned — loop guard
+        }
+
         if (string.IsNullOrEmpty(location))
         {
             var response = await GetAsync<MovieList>("movielist");
@@ -386,7 +464,7 @@ public class Enigma2Service
             foreach (var directoryPath in directoriesToScan.Distinct())
             {
                 Debug.WriteLine($"[Enigma2Service] GetMoviesAsync scanning directory: {directoryPath}");
-                var directoryMovies = await GetMoviesAsync(directoryPath);
+                var directoryMovies = await GetMoviesAsync(directoryPath, depth + 1, visited);
                 foreach (var movie in directoryMovies)
                 {
                     if (!string.IsNullOrEmpty(movie.Filename) && allMovies.All(m => !string.Equals(m.Filename, movie.Filename, StringComparison.OrdinalIgnoreCase)))
@@ -420,10 +498,9 @@ public class Enigma2Service
     public string GetStreamUrl(string serviceRef)
     {
         if (_config == null) return "";
-        // Enigma2/OpenWebif streaming URLs pass the service reference through verbatim,
-        // colons and all, e.g. http://192.168.1.4:8001/1:0:1:1047:1047:233A:EEEE0000:0:0:0:
-        // (no colon-to-underscore substitution — that was a previous bug here).
-        return $"http://{_config.Host}:{_config.StreamingPort}/{serviceRef}";
+        // Enigma2 streaming port is always HTTP (port 8001 is an unencrypted MPEG-TS port).
+        // StreamBaseUrl uses plain http:// intentionally — this is correct Enigma2 behaviour.
+        return $"{_config.StreamBaseUrl}/{serviceRef}";
     }
 
     public string GetMovieStreamUrl(string filename)
@@ -495,11 +572,11 @@ public class Enigma2Service
                 if (arr.Type == Newtonsoft.Json.Linq.JTokenType.Array)
                 {
                     foreach (var item in arr)
-                        list.Add(item.ToObject<AutoTimer>(_jsonSerializer) ?? new AutoTimer());
+                        list.Add(item.ToObject<AutoTimer>(JsonSerializer.Create(_jsonSettings)) ?? new AutoTimer());
                 }
                 else if (arr.Type == Newtonsoft.Json.Linq.JTokenType.Object)
                 {
-                    list.Add(arr.ToObject<AutoTimer>(_jsonSerializer) ?? new AutoTimer());
+                    list.Add(arr.ToObject<AutoTimer>(JsonSerializer.Create(_jsonSettings)) ?? new AutoTimer());
                 }
             }
             return list;
@@ -511,12 +588,7 @@ public class Enigma2Service
         }
     }
 
-    private readonly JsonSerializer _jsonSerializer = JsonSerializer.Create(new JsonSerializerSettings
-    {
-        MissingMemberHandling = MissingMemberHandling.Ignore,
-        NullValueHandling = NullValueHandling.Include,
-        Error = (_, args) => { args.ErrorContext.Handled = true; }
-    });
+    // (JSON deserialization uses the shared _jsonSettings field)
 
     public async Task<bool> SaveAutoTimerAsync(AutoTimer timer)
     {

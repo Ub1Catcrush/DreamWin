@@ -19,8 +19,16 @@
                 </Grid.RowDefinitions>
                 <Border Grid.Row="0" Padding="12,12,12,8"
                         BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
-                    <TextBlock Text="Recordings" FontSize="16" FontWeight="Bold"
-                               Foreground="{StaticResource TextPrimary}"/>
+                    <Grid>
+                        <StackPanel>
+                            <TextBlock Text="Recordings" FontSize="16" FontWeight="Bold"
+                                       Foreground="{StaticResource TextPrimary}"/>
+                            <TextBlock Text="{Binding TotalSizeText}" FontSize="11"
+                                       Foreground="{StaticResource TextSecondary}" Margin="0,2,0,0"/>
+                        </StackPanel>
+                        <Button HorizontalAlignment="Right" Style="{StaticResource BaseButton}"
+                                Padding="12,6" Content="↺ Refresh" Command="{Binding LoadCommand}"/>
+                    </Grid>
                 </Border>
 
                 <ListBox Grid.Row="1" Style="{StaticResource DarkListBox}"

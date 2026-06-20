@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.Versioning;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using DreamWin.ViewModels;
 
@@ -124,6 +125,8 @@ public partial class MainWindow : Window
 
     private void CloseClick(object sender, RoutedEventArgs e) => Close();
 
+    private System.Windows.Threading.DispatcherTimer? _cursorTimer;
+
     private void ToggleFullscreen(bool fullscreen)
     {
         if (fullscreen)
@@ -132,9 +135,9 @@ public partial class MainWindow : Window
             ResizeMode = ResizeMode.NoResize;
             WindowState = WindowState.Maximized;
             Topmost = true;
-            // Hide the title bar row in fullscreen
             if (TitleBarRow != null)
                 TitleBarRow.Height = new System.Windows.GridLength(0);
+            StartCursorHideTimer();
         }
         else
         {
@@ -142,18 +145,129 @@ public partial class MainWindow : Window
             ResizeMode = ResizeMode.CanResize;
             WindowState = WindowState.Normal;
             WindowStyle = WindowStyle.None;
-            // Restore title bar
             if (TitleBarRow != null)
                 TitleBarRow.Height = new System.Windows.GridLength(44);
+            _cursorTimer?.Stop();
+            Mouse.OverrideCursor = null;
+        }
+    }
+
+    private void StartCursorHideTimer()
+    {
+        _cursorTimer?.Stop();
+        Mouse.OverrideCursor = null;
+        _cursorTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(3)
+        };
+        _cursorTimer.Tick += (_, _) =>
+        {
+            _cursorTimer.Stop();
+            if (_vm.LiveTV.IsFullscreen)
+                Mouse.OverrideCursor = Cursors.None;
+        };
+        _cursorTimer.Start();
+    }
+
+    protected override void OnMouseMove(System.Windows.Input.MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        if (_vm?.LiveTV.IsFullscreen == true)
+        {
+            Mouse.OverrideCursor = null;
+            StartCursorHideTimer();
         }
     }
 
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
-        if (e.Key == Key.Escape && _vm.LiveTV.IsFullscreen)
-            _vm.LiveTV.ToggleFullscreenCommand.Execute(null);
-        if (e.Key == Key.F11)
-            _vm.LiveTV.ToggleFullscreenCommand.Execute(null);
+
+        // Global shortcuts active on any view
+        switch (e.Key)
+        {
+            // Fullscreen
+            case Key.F11:
+            case Key.F when _vm.CurrentView == AppView.LiveTV:
+                _vm.LiveTV.ToggleFullscreenCommand.Execute(null);
+                e.Handled = true;
+                break;
+
+            case Key.Escape when _vm.LiveTV.IsFullscreen:
+                _vm.LiveTV.ToggleFullscreenCommand.Execute(null);
+                e.Handled = true;
+                break;
+
+            // Playback (only when in Live TV)
+            case Key.Space when _vm.CurrentView == AppView.LiveTV:
+                _vm.LiveTV.PauseResumeCommand.Execute(null);
+                e.Handled = true;
+                break;
+
+            case Key.M when _vm.CurrentView == AppView.LiveTV:
+                _vm.LiveTV.ToggleMuteCommand.Execute(null);
+                e.Handled = true;
+                break;
+
+            // Volume (no modifier — only when not typing in a TextBox)
+            case Key.Add or Key.OemPlus when _vm.CurrentView == AppView.LiveTV
+                && !(Keyboard.FocusedElement is TextBox):
+                _vm.LiveTV.Volume = Math.Min(100, _vm.LiveTV.Volume + 5);
+                e.Handled = true;
+                break;
+
+            case Key.Subtract or Key.OemMinus when _vm.CurrentView == AppView.LiveTV
+                && !(Keyboard.FocusedElement is TextBox):
+                _vm.LiveTV.Volume = Math.Max(0, _vm.LiveTV.Volume - 5);
+                e.Handled = true;
+                break;
+
+            // Channel navigation
+            case Key.PageUp when _vm.CurrentView == AppView.LiveTV:
+                _vm.LiveTV.ChannelUpCommand.Execute(null);
+                e.Handled = true;
+                break;
+
+            case Key.PageDown when _vm.CurrentView == AppView.LiveTV:
+                _vm.LiveTV.ChannelDownCommand.Execute(null);
+                e.Handled = true;
+                break;
+
+            // Refresh
+            case Key.F5:
+                RefreshCurrentView();
+                e.Handled = true;
+                break;
+
+            // Quick navigation
+            case Key.D1 when Keyboard.Modifiers == ModifierKeys.Control:
+                _vm.NavigateCommand.Execute(AppView.LiveTV);
+                e.Handled = true;
+                break;
+            case Key.D2 when Keyboard.Modifiers == ModifierKeys.Control:
+                _vm.NavigateCommand.Execute(AppView.EPG);
+                e.Handled = true;
+                break;
+            case Key.D3 when Keyboard.Modifiers == ModifierKeys.Control:
+                _vm.NavigateCommand.Execute(AppView.Timers);
+                e.Handled = true;
+                break;
+            case Key.D4 when Keyboard.Modifiers == ModifierKeys.Control:
+                _vm.NavigateCommand.Execute(AppView.Movies);
+                e.Handled = true;
+                break;
+        }
+    }
+
+    private void RefreshCurrentView()
+    {
+        switch (_vm.CurrentView)
+        {
+            case AppView.LiveTV: _ = _vm.LiveTV.LoadBouquetsAsync(); break;
+            case AppView.EPG:    _ = _vm.Epg.LoadAsync(); break;
+            case AppView.Timers: _ = _vm.Timers.LoadAsync(); break;
+            case AppView.AutoTimers: _ = _vm.AutoTimers.LoadAsync(); break;
+            case AppView.Movies: _ = _vm.Movies.LoadAsync(); break;
+        }
     }
 }

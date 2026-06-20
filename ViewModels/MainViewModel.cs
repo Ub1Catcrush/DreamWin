@@ -55,6 +55,21 @@ public partial class MainViewModel : BaseViewModel
         AccentColor = _settingsService.Settings.AccentColor;
         ThemeService.Apply(_settingsService.Settings);
 
+        // Auto-detect OS light/dark mode if user hasn't customised colors yet
+        if (_settingsService.Settings.AccentColor == "#6C63FF" &&
+            _settingsService.Settings.BgDeepColor == "#0F1117")
+        {
+            try
+            {
+                using var key = Microsoft.Win32.Registry.CurrentUser
+                    .OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+                var useLightApps = key?.GetValue("AppsUseLightTheme");
+                if (useLightApps is int val && val == 1)
+                    ApplyThemePreset("Light");
+            }
+            catch { /* Registry unavailable — stay on default dark theme */ }
+        }
+
         // Setup update service event subscriptions
         App.UpdateService.UpdateProgressChanged += (_, msg) =>
         {
@@ -103,7 +118,9 @@ public partial class MainViewModel : BaseViewModel
             ConnectionStatus = ok ? $"Connected to {receiver.Name}" : "Connection failed";
             if (ok)
             {
+                _reconnectFailCount = 0;
                 await LiveTV.LoadBouquetsAsync();
+                StartHealthMonitor();
             }
         }, "Connecting...");
     }
@@ -133,7 +150,12 @@ public partial class MainViewModel : BaseViewModel
     [RelayCommand]
     private async Task StandbyAsync()
     {
-        await Api.PowerAsync(5);
+        var result = System.Windows.MessageBox.Show(
+            $"Put '{ActiveReceiver?.Name}' into standby?\n\nThis will interrupt any running recordings.",
+            "Confirm Standby", System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Question);
+        if (result == System.Windows.MessageBoxResult.Yes)
+            await Api.PowerAsync(5);
     }
 
     [RelayCommand]
@@ -195,8 +217,83 @@ public partial class MainViewModel : BaseViewModel
         }, "Installing update");
     }
 
+    private System.Windows.Threading.DispatcherTimer? _sleepTimer;
+    [ObservableProperty] private int _sleepTimerMinutes;
+    [ObservableProperty] private string _sleepTimerLabel = "";
+
     [RelayCommand]
-    public void ApplyThemePreset(string presetName)
+    private void SetSleepTimer(string minutesStr)
+    {
+        if (!int.TryParse(minutesStr, out var minutes)) minutes = 0;
+        _sleepTimer?.Stop();
+        if (minutes <= 0)
+        {
+            SleepTimerMinutes = 0;
+            SleepTimerLabel = "";
+            return;
+        }
+
+        SleepTimerMinutes = minutes;
+        var target = DateTime.Now.AddMinutes(minutes);
+        SleepTimerLabel = $"Sleep at {target:HH:mm}";
+
+        _sleepTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromMinutes(minutes)
+        };
+        _sleepTimer.Tick += async (_, _) =>
+        {
+            _sleepTimer.Stop();
+            SleepTimerMinutes = 0;
+            SleepTimerLabel = "";
+            await Api.PowerAsync(5);
+        };
+        _sleepTimer.Start();
+    }
+
+    [RelayCommand]
+    private void CancelSleepTimer() => SetSleepTimer("0");
+    private int _reconnectFailCount;
+    private System.Windows.Threading.DispatcherTimer? _healthTimer;
+
+    private void StartHealthMonitor()
+    {
+        _healthTimer?.Stop();
+        _healthTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(30)
+        };
+        _healthTimer.Tick += async (_, _) => await HealthCheckAsync();
+        _healthTimer.Start();
+    }
+
+    private async Task HealthCheckAsync()
+    {
+        if (ActiveReceiver == null) return;
+        var ok = await Api.PingAsync();
+        if (ok)
+        {
+            _reconnectFailCount = 0;
+            if (!IsConnected)
+            {
+                IsConnected = true;
+                ConnectionStatus = $"Reconnected to {ActiveReceiver.Name}";
+            }
+        }
+        else
+        {
+            _reconnectFailCount++;
+            IsConnected = false;
+            ConnectionStatus = $"Connection lost — reconnecting… (attempt {_reconnectFailCount})";
+            // Back-off: try immediately on first fail, then 5s, 15s, 30s
+            var delay = _reconnectFailCount switch { 1 => 0, 2 => 5, 3 => 15, _ => 30 };
+            if (delay > 0) await Task.Delay(TimeSpan.FromSeconds(delay));
+            await ConnectAsync(ActiveReceiver);
+        }
+    }
+
+    [RelayCommand]
+    private void ApplyThemePreset(string presetName)
     {
         if (ThemeService.Presets.TryGetValue(presetName, out var p))
         {
