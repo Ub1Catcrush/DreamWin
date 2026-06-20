@@ -19,9 +19,12 @@ public partial class LiveTVView : UserControl
     private bool _vlcInitialized;
     private LiveTVViewModel? _vm;
 
+    public static LiveTVView? Instance { get; private set; }
+
     public LiveTVView()
     {
         InitializeComponent();
+        Instance = this;
         DataContextChanged += OnDataContextChanged;
         Loaded += OnLoaded;
     }
@@ -71,7 +74,20 @@ public partial class LiveTVView : UserControl
         }
     }
 
-    private void Vm_StreamRequested(object? sender, string url) => PlayStream(url);
+    private void Vm_StreamRequested(object? sender, string url)
+    {
+        // Enforce single stream: stop recordings player if running
+        MoviesView.Instance?.StopPlayback();
+        // Prevent double-starting the same stream
+        if (_mediaPlayer?.IsPlaying == true && _mediaPlayer.Media?.Mrl == url) return;
+        PlayStream(url);
+    }
+
+    public void StopPlayback()
+    {
+        _mediaPlayer?.Stop();
+        if (_vm != null) _vm.IsPlaying = false;
+    }
 
     // Per-bouquet scroll positions: key = bouquet ServiceReference
     private readonly Dictionary<string, double> _bouquetScrollPositions = new();
@@ -181,7 +197,7 @@ public partial class LiveTVView : UserControl
                     foreach (var audio in desc)
                     {
                         Debug.WriteLine($"[LiveTV] AudioTrack id={audio.Id} name='{audio.Name}'");
-                        _vm.AudioTracks.Add(new LiveTVViewModel.AudioTrackInfo
+                        _vm.AudioTracks.Add(new AudioTrackInfo
                         {
                             Id = audio.Id,
                             Name = string.IsNullOrWhiteSpace(audio.Name) ? $"Track {audio.Id}" : audio.Name

@@ -5,11 +5,11 @@
              Background="{StaticResource BgDeep}">
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="300"/>
+            <ColumnDefinition Width="320"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
-        <!-- Movie List -->
+        <!-- ── LEFT: Folder tree + Recording list ── -->
         <Border Grid.Column="0" Background="{StaticResource BgPanel}"
                 BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
             <Grid>
@@ -17,6 +17,8 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
+
+                <!-- Header -->
                 <Border Grid.Row="0" Padding="12,12,12,8"
                         BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
                     <Grid>
@@ -27,80 +29,125 @@
                                        Foreground="{StaticResource TextSecondary}" Margin="0,2,0,0"/>
                         </StackPanel>
                         <Button HorizontalAlignment="Right" Style="{StaticResource BaseButton}"
-                                Padding="12,6" Content="↺ Refresh" Command="{Binding LoadCommand}"/>
+                                Padding="10,5" Content="↺" FontSize="14"
+                                Command="{Binding LoadCommand}"
+                                IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}"
+                                ToolTip="Refresh recordings"/>
                     </Grid>
                 </Border>
 
-                <ListBox Grid.Row="1" Style="{StaticResource DarkListBox}"
-                         ItemContainerStyle="{StaticResource DarkListBoxItem}"
-                         ItemsSource="{Binding Movies}"
-                         SelectedItem="{Binding SelectedMovie}"
-                         Padding="6">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <Grid Margin="0,2">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                </Grid.RowDefinitions>
-                                <TextBlock Grid.Row="0" Text="{Binding Title}"
-                                           FontSize="12" FontWeight="Medium"
-                                           Foreground="{StaticResource TextPrimary}"
-                                           TextTrimming="CharacterEllipsis"/>
-                                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,2,0,0">
-                                    <TextBlock Text="{Binding ServiceName}"
-                                               FontSize="10" Foreground="{StaticResource Accent}"/>
-                                    <TextBlock Text=" · " FontSize="10" Foreground="{StaticResource TextMuted}"/>
-                                    <TextBlock Text="{Binding Length}"
-                                               FontSize="10" Foreground="{StaticResource TextMuted}"/>
-                                </StackPanel>
-                                <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,1,0,0">
-                                    <TextBlock Text="{Binding RecordingDate, StringFormat='dd.MM.yyyy'}"
-                                               FontSize="10" Foreground="{StaticResource TextMuted}"/>
-                                    <TextBlock Text=" · " FontSize="10" Foreground="{StaticResource TextMuted}"/>
-                                    <TextBlock Text="{Binding Filesize, Converter={StaticResource FilesizeMB}}"
-                                               FontSize="10" Foreground="{StaticResource TextMuted}"/>
-                                </StackPanel>
-                            </Grid>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
+                <!-- Folder tree: each folder is an Expander containing its recordings -->
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl ItemsSource="{Binding FolderGroups}" Padding="6">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Expander Margin="0,2" IsExpanded="{Binding IsExpanded, Mode=TwoWay}"
+                                          Style="{StaticResource DarkExpander}">
+                                    <Expander.Header>
+                                        <Grid Margin="0,4">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{Binding DisplayName}"
+                                                       FontSize="12" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextPrimary}"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding Recordings.Count}"
+                                                       FontSize="11" Foreground="{StaticResource TextMuted}"
+                                                       Margin="8,0,4,0" VerticalAlignment="Center"/>
+                                        </Grid>
+                                    </Expander.Header>
 
-                <!-- Error banner: surfaces load failures that would otherwise just leave
-                     the recordings list looking silently empty. -->
-                <Border Grid.Row="1" VerticalAlignment="Top" Margin="8,8,8,0" Padding="10,8" CornerRadius="6"
-                        Background="#332E3A" BorderBrush="{StaticResource AccentRed}" BorderThickness="1"
+                                    <ListBox Style="{StaticResource DarkListBox}"
+                                             ItemContainerStyle="{StaticResource DarkListBoxItem}"
+                                             ItemsSource="{Binding Recordings}"
+                                             SelectedItem="{Binding DataContext.SelectedMovie,
+                                                            RelativeSource={RelativeSource AncestorType=UserControl},
+                                                            Mode=TwoWay}"
+                                             Padding="6,0,0,6" Margin="14,0,0,0"
+                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Margin="2,3">
+                                                    <Grid.RowDefinitions>
+                                                        <RowDefinition Height="Auto"/>
+                                                        <RowDefinition Height="Auto"/>
+                                                        <RowDefinition Height="Auto"/>
+                                                    </Grid.RowDefinitions>
+                                                    <!-- PRIMARY: Event/show title -->
+                                                    <TextBlock Grid.Row="0"
+                                                               Text="{Binding DisplayTitle}"
+                                                               FontSize="12" FontWeight="SemiBold"
+                                                               Foreground="{StaticResource TextPrimary}"
+                                                               TextTrimming="CharacterEllipsis"/>
+                                                    <!-- SECONDARY: Channel + duration -->
+                                                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,2,0,0">
+                                                        <TextBlock Text="{Binding ServiceName}"
+                                                                   FontSize="10" Foreground="{StaticResource Accent}"/>
+                                                        <TextBlock Text=" · " FontSize="10" Foreground="{StaticResource TextMuted}"/>
+                                                        <TextBlock Text="{Binding Length}"
+                                                                   FontSize="10" Foreground="{StaticResource TextMuted}"/>
+                                                    </StackPanel>
+                                                    <!-- TERTIARY: Date + size -->
+                                                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,1,0,0">
+                                                        <TextBlock Text="{Binding RecordingDate, StringFormat='{}{0:dd.MM.yyyy HH:mm}'}"
+                                                                   FontSize="10" Foreground="{StaticResource TextMuted}"/>
+                                                        <TextBlock Text=" · " FontSize="10" Foreground="{StaticResource TextMuted}"/>
+                                                        <TextBlock Text="{Binding FilesizeMB}"
+                                                                   FontSize="10" Foreground="{StaticResource TextMuted}"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </Expander>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <!-- Error / busy -->
+                <Border Grid.Row="1" VerticalAlignment="Top" Margin="8,8,8,0" Padding="10,8"
+                        CornerRadius="6" Background="#332E3A"
+                        BorderBrush="{StaticResource AccentRed}" BorderThickness="1"
                         Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}">
-                    <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource AccentRed}"
-                               FontSize="11" TextWrapping="Wrap"/>
+                    <StackPanel>
+                        <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource AccentRed}"
+                                   FontSize="11" TextWrapping="Wrap"/>
+                        <Button Style="{StaticResource BaseButton}" Padding="8,4" Margin="0,6,0,0"
+                                Content="↺ Retry" Command="{Binding RetryCommand}"/>
+                    </StackPanel>
                 </Border>
             </Grid>
         </Border>
 
-        <!-- Movie Player / Details -->
+        <!-- ── RIGHT: Player + controls ── -->
         <Grid Grid.Column="1">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <!-- Player -->
+            <!-- Video -->
             <Border Grid.Row="0" Background="Black">
-                <!-- VLC VideoView: overlay content must be placed INSIDE VideoView per
-                     LibVLCSharp.WPF's airspace handling, not as a sibling. -->
                 <vlc:VideoView x:Name="MovieVideoView" Background="Black">
                     <Grid>
-                        <!-- Placeholder -->
+                        <!-- Placeholder / select prompt -->
                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
                                     Visibility="{Binding IsPlaying, Converter={StaticResource BoolToVisibilityInverted}}">
-                            <TextBlock Text="{Binding SelectedMovie.Title, FallbackValue='Select a recording'}"
-                                       FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextSecondary}"
-                                       HorizontalAlignment="Center" TextAlignment="Center"/>
+                            <TextBlock Text="🎬" FontSize="64" HorizontalAlignment="Center" Opacity="0.15"/>
+                            <TextBlock Text="{Binding SelectedMovie.DisplayTitle, FallbackValue='Select a recording to play'}"
+                                       FontSize="18" FontWeight="Bold"
+                                       Foreground="{StaticResource TextSecondary}"
+                                       HorizontalAlignment="Center" TextAlignment="Center"
+                                       TextWrapping="Wrap" MaxWidth="500"/>
                             <TextBlock Text="{Binding SelectedMovie.Description}"
                                        FontSize="12" Foreground="{StaticResource TextMuted}"
                                        HorizontalAlignment="Center" TextAlignment="Center"
-                                       MaxWidth="400" TextWrapping="Wrap" Margin="0,10,0,0"/>
+                                       MaxWidth="400" TextWrapping="Wrap" Margin="0,8,0,0"/>
                             <Button Style="{StaticResource AccentButton}" Margin="0,20,0,0"
                                     Padding="20,10" FontSize="14" Content="▶  Play"
                                     Visibility="{Binding SelectedMovie, Converter={StaticResource NullToVisibility}}"
@@ -111,8 +158,102 @@
                 </vlc:VideoView>
             </Border>
 
-            <!-- Details bar -->
+            <!-- Playback controls bar -->
             <Border Grid.Row="1" Background="{StaticResource BgPanel}"
+                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0"
+                    Padding="12,8"
+                    Visibility="{Binding IsPlaying, Converter={StaticResource BoolToVisibility}}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Transport buttons -->
+                    <StackPanel Grid.Column="0" Orientation="Horizontal">
+                        <!-- Pause/Resume -->
+                        <Button Style="{StaticResource IconButton}" Width="36" Height="36"
+                                Margin="0,0,4,0"
+                                Command="{Binding PauseResumeCommand}">
+                            <TextBlock>
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Text" Value="⏸"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsPaused}" Value="True">
+                                                <Setter Property="Text" Value="▶"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Button>
+                        <!-- Stop -->
+                        <Button Style="{StaticResource IconButton}" Width="36" Height="36"
+                                Margin="0,0,4,0" Content="⏹"
+                                Command="{Binding StopCommand}"/>
+                        <!-- Rewind 30s -->
+                        <Button Style="{StaticResource IconButton}" Width="36" Height="36"
+                                Margin="0,0,4,0" Content="⏪" ToolTip="Back 30s"
+                                Command="{Binding SeekBackCommand}"/>
+                        <!-- Forward 30s -->
+                        <Button Style="{StaticResource IconButton}" Width="36" Height="36"
+                                Margin="0,0,8,0" Content="⏩" ToolTip="Forward 30s"
+                                Command="{Binding SeekForwardCommand}"/>
+
+                        <!-- Mute -->
+                        <Button Style="{StaticResource IconButton}" Width="36" Height="36">
+                            <Button.Command>
+                                <Binding Path="ToggleMuteCommand"/>
+                            </Button.Command>
+                            <TextBlock>
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Text" Value="🔊"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsMuted}" Value="True">
+                                                <Setter Property="Text" Value="🔇"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Button>
+                        <!-- Volume -->
+                        <Slider Width="80" Minimum="0" Maximum="100" VerticalAlignment="Center"
+                                Margin="6,0,12,0"
+                                Value="{Binding Volume, Mode=TwoWay}"/>
+                    </StackPanel>
+
+                    <!-- Position / time -->
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0">
+                        <Slider Minimum="0" Maximum="100" VerticalAlignment="Center"
+                                Value="{Binding PositionPercent, Mode=TwoWay}"
+                                x:Name="PositionSlider"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                            <TextBlock Text="{Binding PositionText}" FontSize="10"
+                                       Foreground="{StaticResource TextSecondary}"/>
+                            <TextBlock Text=" / " FontSize="10" Foreground="{StaticResource TextMuted}"/>
+                            <TextBlock Text="{Binding DurationText}" FontSize="10"
+                                       Foreground="{StaticResource TextMuted}"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- Audio track -->
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="Audio:" FontSize="11" Foreground="{StaticResource TextSecondary}"
+                                   VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <ComboBox Width="120" Style="{StaticResource DarkComboBox}"
+                                  ItemsSource="{Binding AudioTracks}"
+                                  SelectedItem="{Binding SelectedAudioTrack}"
+                                  DisplayMemberPath="Name"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Details bar -->
+            <Border Grid.Row="2" Background="{StaticResource BgPanel}"
                     BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="16,10"
                     Visibility="{Binding SelectedMovie, Converter={StaticResource NullToVisibility}}">
                 <Grid>
@@ -121,9 +262,9 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <StackPanel>
-                        <TextBlock Text="{Binding SelectedMovie.Title}" FontSize="14" FontWeight="SemiBold"
+                        <TextBlock Text="{Binding SelectedMovie.DisplayTitle}" FontSize="14" FontWeight="SemiBold"
                                    Foreground="{StaticResource TextPrimary}"/>
-                        <TextBlock Text="{Binding SelectedMovie.DescriptionExtended}"
+                        <TextBlock Text="{Binding SelectedMovie.Description}"
                                    FontSize="11" Foreground="{StaticResource TextMuted}"
                                    TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
                     </StackPanel>

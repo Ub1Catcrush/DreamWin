@@ -52,24 +52,31 @@ public static class ThemeService
         TrySetBrush(res, System.Windows.SystemColors.ControlBrushKey, Blend(bgPanel, accent, 0.06f));
     }
 
-    private static void TrySet(ResourceDictionary res, object key, string hexColor)
-    {
-        try
-        {
-            var color = (Color)ColorConverter.ConvertFromString(hexColor);
-            if (res.Contains(key)) res[key] = color;
-        }
-        catch { }
-    }
-
     private static void TrySetBrush(ResourceDictionary res, object key, string hexColor)
     {
         try
         {
             var color = (Color)ColorConverter.ConvertFromString(hexColor);
             var brush = new SolidColorBrush(color);
-            brush.Freeze();
-            if (res.Contains(key)) res[key] = brush;
+            // Do NOT freeze — frozen brushes can't be replaced in ResourceDictionary
+            // WPF will still reuse the brush instance via the dictionary key
+            if (res.Contains(key))
+                res[key] = brush;
+            else
+                res.Add(key, brush);
+        }
+        catch { }
+    }
+
+    private static void TrySet(ResourceDictionary res, object key, string hexColor)
+    {
+        try
+        {
+            var color = (Color)ColorConverter.ConvertFromString(hexColor);
+            if (res.Contains(key))
+                res[key] = color;
+            else
+                res.Add(key, color);
         }
         catch { }
     }

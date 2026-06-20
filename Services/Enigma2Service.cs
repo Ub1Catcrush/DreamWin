@@ -407,6 +407,13 @@ public class Enigma2Service : IDisposable
     }
 
     // ─── Movies ──────────────────────────────────────────────────────
+    public async Task<MovieList> GetMovieListWithBookmarksAsync(string? location = null)
+    {
+        var query = new Dictionary<string, string>();
+        if (!string.IsNullOrEmpty(location)) query["dirname"] = location;
+        return await GetAsync<MovieList>("movielist", query) ?? new MovieList();
+    }
+
     public async Task<List<Movie>> GetMoviesAsync(string? location = null, int depth = 0, HashSet<string>? visited = null)
     {
         const int MaxDepth = 2;
@@ -594,22 +601,26 @@ public class Enigma2Service : IDisposable
     {
         try
         {
+            // Enigma2 AutoTimer plugin: use /add for new (no id), /edit for existing
+            var endpoint = string.IsNullOrEmpty(timer.Id) ? "autotimer/add" : "autotimer/edit";
             var query = new Dictionary<string, string>
             {
-                ["id"] = timer.Id,
-                ["name"] = timer.Name,
-                ["match"] = timer.Match,
+                ["name"]    = timer.Name,
+                ["match"]   = timer.Match,
                 ["enabled"] = timer.Enabled ? "yes" : "no",
-                ["searchType"] = timer.SearchType.ToString(),
-                ["searchCase"] = timer.SearchCase.ToString(),
-                ["justplay"] = timer.JustPlay.ToString(),
+                ["searchType"]  = timer.SearchType.ToString(),
+                ["searchCase"]  = timer.SearchCase.ToString(),
+                ["justplay"]    = timer.JustPlay.ToString(),
                 ["avoidDuplicateDescription"] = timer.AvoidDuplicates.ToString(),
             };
+            if (!string.IsNullOrEmpty(timer.Id)) query["id"] = timer.Id;
             if (!string.IsNullOrEmpty(timer.From)) query["from"] = timer.From;
-            if (!string.IsNullOrEmpty(timer.To)) query["to"] = timer.To;
+            if (!string.IsNullOrEmpty(timer.To))   query["to"]   = timer.To;
             if (!string.IsNullOrEmpty(timer.ServiceRef)) query["serviceref"] = timer.ServiceRef;
             if (timer.MaxDuration > 0) query["maxduration"] = timer.MaxDuration.ToString();
-            var result = await GetAsync<GenericResponse>("autotimer/edit", query);
+            if (!string.IsNullOrEmpty(timer.Tags)) query["tags"] = timer.Tags;
+
+            var result = await GetAsync<GenericResponse>(endpoint, query);
             return result?.Result ?? false;
         }
         catch (Exception ex)

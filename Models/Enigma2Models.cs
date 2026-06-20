@@ -68,8 +68,11 @@ public class EpgEvent
     }
     public bool IsCurrentlyAiring => DateTime.Now >= BeginTime && DateTime.Now <= EndTime;
 
-    // Set at runtime when building the EPG grid — pixel offset from grid start (3px/min)
+    // Set at runtime when building the EPG grid
+    // OffsetPx = vertical offset from grid start (Y axis = time)
+    // HeightPx = block height proportional to duration
     public double OffsetPx { get; set; }
+    public double HeightPx { get; set; }
 }
 
 public class EpgResponse
@@ -214,16 +217,16 @@ public class GenericResponse
 public class SignalStatus
 {
     [JsonProperty("snr")]
-    public int Snr { get; set; }
+    public int? Snr { get; set; }
 
     [JsonProperty("snr_db")]
-    public int SnrDb { get; set; }
+    public int? SnrDb { get; set; }
 
     [JsonProperty("agc")]
-    public int Agc { get; set; }
+    public int? Agc { get; set; }
 
     [JsonProperty("ber")]
-    public int Ber { get; set; }
+    public int? Ber { get; set; }
 
     [JsonProperty("tunertype")]
     public string TunerType { get; set; } = "";

@@ -14,6 +14,22 @@ public class EpgGridRow
     public DateTime GridStart { get; set; }
 }
 
+// A folder of recordings, shown as an expandable group in the Movies view.
+public partial class MovieFolderGroup : ObservableObject
+{
+    public string FolderName { get; }
+    public string DisplayName { get; }
+    public ObservableCollection<Movie> Recordings { get; } = [];
+
+    [ObservableProperty] private bool _isExpanded;
+
+    public MovieFolderGroup(string folderName, string displayName)
+    {
+        FolderName = folderName;
+        DisplayName = displayName;
+    }
+}
+
 // ─── EPG ViewModel ────────────────────────────────────────────────────────────
 public partial class EpgViewModel : BaseViewModel
 {
@@ -29,19 +45,40 @@ public partial class EpgViewModel : BaseViewModel
     [ObservableProperty] private bool _isSearchMode;
     [ObservableProperty] private string _currentServiceName = "";
 
+    // Grid constants: 54px per 30-minute slot → 1.8px per minute
+    public const double PxPerMinute = 1.8;
+    public const double SlotHeightPx = 54.0;  // 30 min × 1.8px
+
     // Grid view
     [ObservableProperty] private bool _isGridView;
     [ObservableProperty] private ObservableCollection<EpgGridRow> _gridRows = [];
     [ObservableProperty] private DateTime _gridStart = DateTime.Now.Date.AddHours(DateTime.Now.Hour);
     [ObservableProperty] private int _gridHours = 3;
 
-    // Time slot labels shown in the grid header (one per 30-minute slot)
+    // Time slot labels: one per 30 min slot along Y axis
     public List<string> GridTimeSlots => Enumerable.Range(0, GridHours * 2)
         .Select(i => GridStart.AddMinutes(i * 30).ToString("HH:mm"))
         .ToList();
 
-    partial void OnGridStartChanged(DateTime value) => OnPropertyChanged(nameof(GridTimeSlots));
-    partial void OnGridHoursChanged(int value) => OnPropertyChanged(nameof(GridTimeSlots));
+    // Total canvas height for all time slots
+    public double GridTotalHeight => GridHours * 2 * SlotHeightPx;
+
+    // Y position of the red "now" line
+    public double NowLineY => Math.Max(0,
+        Math.Min(GridTotalHeight, (DateTime.Now - GridStart).TotalMinutes * PxPerMinute));
+
+    partial void OnGridStartChanged(DateTime value)
+    {
+        OnPropertyChanged(nameof(GridTimeSlots));
+        OnPropertyChanged(nameof(GridTotalHeight));
+        OnPropertyChanged(nameof(NowLineY));
+    }
+    partial void OnGridHoursChanged(int value)
+    {
+        OnPropertyChanged(nameof(GridTimeSlots));
+        OnPropertyChanged(nameof(GridTotalHeight));
+        OnPropertyChanged(nameof(NowLineY));
+    }
 
     public event EventHandler<EpgEvent>? AddTimerRequested;
 
@@ -201,14 +238,13 @@ public partial class EpgViewModel : BaseViewModel
             {
                 var evts = grouped.TryGetValue(svc.ServiceReference, out var list) ? list : [];
                 foreach (var e in evts)
-                    e.OffsetPx = Math.Max(0, (e.BeginTime - GridStart).TotalMinutes * 3.0);
-
-                var row = new EpgGridRow
                 {
-                    Service = svc,
-                    GridStart = GridStart,
-                    Events = evts
-                };
+                    // Y = time axis: 1.8px per minute
+                    e.OffsetPx = Math.Max(0, (e.BeginTime - GridStart).TotalMinutes * EpgViewModel.PxPerMinute);
+                    e.HeightPx = Math.Max(4, e.DurationSec / 60.0 * EpgViewModel.PxPerMinute - 2);
+                }
+
+                var row = new EpgGridRow { Service = svc, GridStart = GridStart, Events = evts };
                 gridRowsTemp.Add(row);
             }
             await OnUiAsync(() => { foreach (var r in gridRowsTemp) GridRows.Add(r); });
@@ -355,19 +391,29 @@ public partial class TimersViewModel : BaseViewModel
 public partial class MoviesViewModel : BaseViewModel
 {
     private readonly Enigma2Service _api;
+    private List<Movie> _allMovies = [];
+    private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
+    private DateTime _lastLoaded = DateTime.MinValue;
 
     [ObservableProperty] private ObservableCollection<Movie> _movies = [];
+    [ObservableProperty] private ObservableCollection<MovieFolderGroup> _folderGroups = [];
     [ObservableProperty] private Movie? _selectedMovie;
     [ObservableProperty] private string _currentStreamUrl = "";
     [ObservableProperty] private bool _isPlaying;
+    [ObservableProperty] private bool _isPaused;
+    [ObservableProperty] private bool _isMuted;
+    [ObservableProperty] private double _volume = 80;
+    [ObservableProperty] private double _positionPercent;
+    [ObservableProperty] private string _positionText = "0:00:00";
+    [ObservableProperty] private string _durationText = "0:00:00";
+    [ObservableProperty] private AudioTrackInfo? _selectedAudioTrack;
+    [ObservableProperty] private ObservableCollection<AudioTrackInfo> _audioTracks = [];
 
-    public string TotalSizeText => Movies.Count == 0 ? "" :
-        $"{Movies.Count} recordings · {Movies.Sum(m => m.Filesize) / 1024.0 / 1024 / 1024:0.0} GB";
-
-    partial void OnMoviesChanged(ObservableCollection<Movie> value) =>
-        OnPropertyChanged(nameof(TotalSizeText));
+    public string TotalSizeText => _allMovies.Count == 0 ? "" :
+        $"{_allMovies.Count} recordings · {_allMovies.Sum(m => m.Filesize) / 1024.0 / 1024 / 1024:0.0} GB";
 
     public event EventHandler<string>? StreamRequested;
+    public event EventHandler? StopRequested;
 
     public MoviesViewModel(Enigma2Service api)
     {
@@ -375,44 +421,130 @@ public partial class MoviesViewModel : BaseViewModel
         Movies.CollectionChanged += (_, _) => OnPropertyChanged(nameof(TotalSizeText));
     }
 
-    public async Task LoadAsync()
+    [RelayCommand]
+    public async Task LoadAsync(bool forceRefresh = false)
     {
+        if (!forceRefresh && DateTime.Now - _lastLoaded < CacheTtl && _allMovies.Count > 0)
+        {
+            return;
+        }
+
+        var ct = NewLoadToken();
         await RunAsync(async () =>
         {
-            var movies = await _api.GetMoviesAsync();
-            await OnUiAsync(() => {
-                Movies.Clear();
-                foreach (var m in movies.OrderByDescending(m => m.RecordingTime))
-                    Movies.Add(m);
+            // GetMoviesAsync() already recursively walks the root directory and every
+            // bookmark (using their full device paths), deduplicating by filename as it goes.
+            var root = await _api.GetMoviesAsync();
+            ct.ThrowIfCancellationRequested();
+
+            var all = root
+                .OrderByDescending(m => m.RecordingTime)
+                .ToList();
+
+            _allMovies = all;
+            _lastLoaded = DateTime.Now;
+
+            await OnUiAsync(() =>
+            {
+                RebuildFolderGroups(all);
+                OnPropertyChanged(nameof(TotalSizeText));
             });
-            Debug.WriteLine($"[MoviesViewModel] loaded {Movies.Count} recordings");
         }, "Loading recordings...");
     }
 
-    [RelayCommand]
-    private void PlayMovie(Movie movie)
+    private void RebuildFolderGroups(List<Movie> all)
     {
+        // Remember which folder was expanded (if any) so a refresh doesn't collapse
+        // whatever the user had open.
+        var previouslyExpanded = FolderGroups.FirstOrDefault(g => g.IsExpanded)?.FolderName;
+
+        var groups = all
+            .GroupBy(m => m.FolderName)
+            .OrderBy(g => g.Key)
+            .Select(g =>
+            {
+                var displayName = string.IsNullOrEmpty(g.Key)
+                    ? "Recordings"
+                    : System.IO.Path.GetFileName(g.Key.TrimEnd('/'));
+                var group = new MovieFolderGroup(g.Key, displayName);
+                foreach (var movie in g.OrderByDescending(m => m.RecordingTime))
+                    group.Recordings.Add(movie);
+                return group;
+            })
+            .ToList();
+
+        FolderGroups.Clear();
+        foreach (var g in groups) FolderGroups.Add(g);
+
+        // Expand whichever folder was previously open; otherwise default to the first one.
+        var toExpand = (previouslyExpanded != null
+            ? FolderGroups.FirstOrDefault(g => g.FolderName == previouslyExpanded)
+            : null) ?? FolderGroups.FirstOrDefault();
+
+        if (toExpand != null) toExpand.IsExpanded = true;
+    }
+
+    [RelayCommand]
+    private void ToggleFolder(MovieFolderGroup group)
+    {
+        group.IsExpanded = !group.IsExpanded;
+    }
+
+    [RelayCommand]
+    public void PlayMovie(Movie? movie)
+    {
+        if (movie == null) return;
         SelectedMovie = movie;
         var url = _api.GetMovieStreamUrl(movie.Filename);
         CurrentStreamUrl = url;
         IsPlaying = true;
+        IsPaused = false;
         StreamRequested?.Invoke(this, url);
     }
 
     [RelayCommand]
-    private async Task DeleteMovieAsync(Movie movie)
+    private void PauseResume() => IsPaused = !IsPaused;
+
+    [RelayCommand]
+    private void ToggleMute() => IsMuted = !IsMuted;
+
+    [RelayCommand]
+    private void Stop()
     {
+        IsPlaying = false;
+        IsPaused = false;
+        StopRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    [RelayCommand]
+    private void SeekBack() { /* handled in view via media player */ }
+
+    [RelayCommand]
+    private void SeekForward() { /* handled in view via media player */ }
+
+    [RelayCommand]
+    private async Task DeleteMovieAsync(Movie? movie)
+    {
+        if (movie == null) return;
         var r = System.Windows.MessageBox.Show(
-            $"Permanently delete recording:\n'{movie.Title}'?\n\nThis cannot be undone.",
+            $"Permanently delete recording:\n'{movie.DisplayTitle}'?\n\nThis cannot be undone.",
             "Confirm Delete Recording", System.Windows.MessageBoxButton.YesNo,
             System.Windows.MessageBoxImage.Warning);
         if (r != System.Windows.MessageBoxResult.Yes) return;
         await RunAsync(async () =>
         {
             await _api.DeleteMovieAsync(movie.ServiceReference);
-            Movies.Remove(movie);
+            _allMovies.Remove(movie);
+            _lastLoaded = DateTime.MinValue; // invalidate cache
+            await OnUiAsync(() =>
+            {
+                RebuildFolderGroups(_allMovies);
+                OnPropertyChanged(nameof(TotalSizeText));
+            });
         });
     }
+
+    public override Task RetryAsync() => LoadAsync(forceRefresh: true);
 }
 
 // ─── AutoTimers ViewModel ──────────────────────────────────────────────────────

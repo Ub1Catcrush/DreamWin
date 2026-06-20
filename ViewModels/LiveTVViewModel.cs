@@ -50,9 +50,9 @@ public partial class LiveTVViewModel : BaseViewModel
             var sig = await _api.GetSignalAsync();
             if (sig != null)
             {
-                SignalSnr = sig.Snr;
-                SignalAgc = sig.Agc;
-                HasSignal = sig.Snr > 0;
+                SignalSnr = sig.Snr ?? 0;
+                SignalAgc = sig.Agc ?? 0;
+                HasSignal = sig.Snr is > 0;
             }
         };
         _signalTimer.Start();
@@ -187,12 +187,13 @@ public partial class LiveTVViewModel : BaseViewModel
     {
         // Filter handled by converter in view
     }
+}
 
-    public class AudioTrackInfo
-    {
-        public int Id { get; set; }
-        public string Name { get; set; } = "";
+// Shared between LiveTVViewModel and MoviesViewModel — not tied to either's namespace nesting.
+public class AudioTrackInfo
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
 
-        public override string ToString() => Name;
-    }
+    public override string ToString() => Name;
 }
