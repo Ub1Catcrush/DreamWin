@@ -19,6 +19,14 @@ public partial class LiveTVView : UserControl
     private bool _vlcInitialized;
     private LiveTVViewModel? _vm;
 
+    // Remembers the NAME of the last audio track the user explicitly picked (e.g. via
+    // the audio track combo box), so that switching to a different channel that offers
+    // a same-named track (e.g. "Deutsch"/"English") restores that preference instead of
+    // always falling back to "first available track". Names are matched rather than IDs
+    // because VLC's per-stream track Ids aren't stable/comparable across channels.
+    private string? _preferredAudioTrackName;
+    private bool _suppressAudioTrackSelectionTracking;
+
     public static LiveTVView? Instance { get; private set; }
 
     /// <summary>
@@ -230,7 +238,14 @@ public partial class LiveTVView : UserControl
             }
         }
         else if (e.PropertyName == nameof(LiveTVViewModel.SelectedAudioTrack) && _vm.SelectedAudioTrack != null)
+        {
             _mediaPlayer.SetAudioTrack(_vm.SelectedAudioTrack.Id);
+
+            // Only remember this as the user's preference if it wasn't us assigning it
+            // programmatically (e.g. RefreshAudioTracks auto-picking a default track).
+            if (!_suppressAudioTrackSelectionTracking)
+                _preferredAudioTrackName = _vm.SelectedAudioTrack.Name;
+        }
     }
 
     private void SaveChannelScrollPosition()
@@ -266,11 +281,52 @@ public partial class LiveTVView : UserControl
         return VisualTreeHelper.GetChild(border, 0) as ScrollViewer;
     }
 
+    // Fail-safe: hides the channel-switch mask even if the stream never reaches the
+    // Playing state (bad URL, dead channel, timeout) so the screen doesn't stay black.
+    private System.Windows.Threading.DispatcherTimer? _channelSwitchMaskTimer;
+
+    private void ShowChannelSwitchMask()
+    {
+        if (ChannelSwitchMask != null)
+            ChannelSwitchMask.Visibility = Visibility.Visible;
+
+        _channelSwitchMaskTimer?.Stop();
+        _channelSwitchMaskTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(6)
+        };
+        _channelSwitchMaskTimer.Tick += (_, _) =>
+        {
+            _channelSwitchMaskTimer?.Stop();
+            HideChannelSwitchMask();
+        };
+        _channelSwitchMaskTimer.Start();
+    }
+
+    private void HideChannelSwitchMask()
+    {
+        _channelSwitchMaskTimer?.Stop();
+        if (ChannelSwitchMask != null)
+            ChannelSwitchMask.Visibility = Visibility.Collapsed;
+    }
+
     private void OnMediaPlayerPlaying(object? sender, EventArgs e)
     {
         if (_mediaPlayer == null || _vm == null) return;
 
         Dispatcher.InvokeAsync(RefreshAudioTracks);
+
+        // Playing means VLC's pipeline has started, NOT that a frame has actually been
+        // presented to the native video window yet — there's a further short gap during
+        // which that window's blank/white background can still show through. Unmasking
+        // immediately on Playing just moved the flash slightly later instead of removing
+        // it (black mask -> white gap -> real picture). A short delay here gives VLC time
+        // to actually present a frame before we reveal the native surface underneath.
+        _ = Dispatcher.InvokeAsync(async () =>
+        {
+            await Task.Delay(250);
+            HideChannelSwitchMask();
+        });
     }
 
             private void OnMediaPlayerEsAdded(object? sender, EventArgs e)
@@ -303,20 +359,36 @@ public partial class LiveTVView : UserControl
                         });
                     }
 
-                    // select current track if available
-                    try
+                    // VLC always includes a pseudo-track with Id == -1 representing "no
+                    // audio track" ("Disable"/"Désactivé"). It must never be picked as a
+                    // default/fallback selection — only real, playable tracks should be.
+                    var realTracks = _vm.AudioTracks.Where(a => a.Id != -1).ToList();
+
+                    AudioTrackInfo? target = null;
+
+                    // 1) Prefer whatever the user explicitly picked before (matched by
+                    //    name, since VLC's per-stream track Ids aren't stable/comparable
+                    //    across different channels/streams).
+                    if (_preferredAudioTrackName != null)
+                        target = realTracks.FirstOrDefault(a =>
+                            string.Equals(a.Name, _preferredAudioTrackName, StringComparison.OrdinalIgnoreCase));
+
+                    // 2) Otherwise, the first real (non-disabled) audio track.
+                    target ??= realTracks.FirstOrDefault();
+
+                    // 3) Truly no real tracks at all (audio-less stream) — fall back to
+                    //    whatever VLC reports, even if that's the disabled entry, just so
+                    //    SelectedAudioTrack/the combo box isn't left dangling on nothing.
+                    target ??= _vm.AudioTracks.FirstOrDefault();
+
+                    if (target != null)
                     {
-                        var currentId = _mediaPlayer.AudioTrack;
-                        var sel = _vm.AudioTracks.FirstOrDefault(a => a.Id == currentId);
-                        if (sel != null)
-                            _vm.SelectedAudioTrack = sel;
-                        else if (_vm.SelectedAudioTrack == null && _vm.AudioTracks.Any())
-                            _vm.SelectedAudioTrack = _vm.AudioTracks.First();
-                    }
-                    catch
-                    {
-                        if (_vm.SelectedAudioTrack == null && _vm.AudioTracks.Any())
-                            _vm.SelectedAudioTrack = _vm.AudioTracks.First();
+                        // Mark this as a programmatic assignment so Vm_PropertyChanged
+                        // doesn't mistake it for a user choice and overwrite the
+                        // remembered preference with it.
+                        _suppressAudioTrackSelectionTracking = true;
+                        try { _vm.SelectedAudioTrack = target; }
+                        finally { _suppressAudioTrackSelectionTracking = false; }
                     }
                 }
                 catch (Exception ex)
@@ -329,12 +401,19 @@ public partial class LiveTVView : UserControl
     {
         if (_libVlc == null || _mediaPlayer == null || string.IsNullOrEmpty(url)) return;
 
+        // Mask the video surface immediately. The actual VLC render surface is a
+        // native child window (see the ChannelSwitchMask comment in XAML) that briefly
+        // shows its own blank/white background between the old stream's last frame and
+        // the new stream's first one — this WPF-level overlay covers that gap.
+        ShowChannelSwitchMask();
+
         try
         {
-            // Stop current playback cleanly to prevent white flash between streams
-            if (_mediaPlayer.IsPlaying || _mediaPlayer.State == VLCState.Paused)
-                _mediaPlayer.Stop();
-
+            // NOTE: deliberately NOT calling _mediaPlayer.Stop() here first. Stop()
+            // immediately clears the native video surface back to its blank state,
+            // which is what produced the white flash in the first place — Play() with
+            // a new Media handles tearing down the previous stream internally without
+            // that extra blank step, and is the standard way to switch streams in VLC.
             var media = new Media(_libVlc, new Uri(url));
             // Add VLC options to reduce startup flash: disable video title and deinterlace
             media.AddOption(":no-video-title-show");
@@ -351,6 +430,7 @@ public partial class LiveTVView : UserControl
         catch (Exception ex)
         {
             Debug.WriteLine($"[LiveTV] PlayStream error: {ex}");
+            HideChannelSwitchMask();
         }
 
         _ = Task.Run(async () =>

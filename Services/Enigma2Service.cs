@@ -10,6 +10,83 @@ using DreamWin.Models;
 
 namespace DreamWin.Services;
 
+/// <summary>
+/// Runs a sequence of async "fetch" operations against a remote device with the next
+/// fetch starting the moment the previous one returns its raw result — but BEFORE that
+/// raw result has been processed/parsed. Processing of item N then happens concurrently
+/// with the network request for item N+1.
+///
+/// This exists because some receivers (cheap embedded HTTP servers on set-top boxes)
+/// fall over or hang when hit with more than one concurrent request — even 2-4 at once,
+/// gated by a SemaphoreSlim, was enough to crash the box. A true one-at-a-time request
+/// queue avoids that while still overlapping CPU-bound processing (JSON/XML parsing,
+/// LINQ filtering, etc.) with the next request's network latency, so we don't pay for
+/// fetch and process fully sequentially either.
+///
+/// Order of results is preserved and matches the input order.
+/// </summary>
+public static class SequentialPipeline
+{
+    /// <summary>
+    /// <paramref name="fetch"/> should do ONLY the network call (e.g. the GetStringAsync /
+    /// GetAsync&lt;T&gt; call) and return the raw fetched value. <paramref name="process"/>
+    /// takes that raw value and the original input item and turns it into the final
+    /// result — this is where parsing/filtering/mapping should live, so it can run while
+    /// the next item's <paramref name="fetch"/> is already in flight.
+    /// </summary>
+    public static async Task<List<TResult>> RunAsync<TItem, TRaw, TResult>(
+        IEnumerable<TItem> items,
+        Func<TItem, Task<TRaw>> fetch,
+        Func<TItem, TRaw, Task<TResult>> process,
+        Func<TItem, Exception, TResult?>? onError = null)
+    {
+        var itemList = items.ToList();
+        var results = new List<TResult>(itemList.Count);
+        if (itemList.Count == 0) return results;
+
+        // Kick off the first request before we have anything to process. SafeFetch
+        // guards against a fetch implementation that throws synchronously (rather than
+        // via a faulted Task), so it doesn't escape uncaught here before the loop's own
+        // try/catch applies.
+        Task<TRaw> inFlight = SafeFetch(fetch, itemList[0]);
+
+        for (int i = 0; i < itemList.Count; i++)
+        {
+            var currentItem = itemList[i];
+            TRaw raw;
+            try
+            {
+                raw = await inFlight; // wait for THIS request only — never more than one outstanding
+            }
+            catch (Exception ex)
+            {
+                if (onError == null) throw;
+                var fallback = onError(currentItem, ex);
+                if (fallback != null) results.Add(fallback);
+                // Still need to advance to the next fetch even though this one failed.
+                if (i + 1 < itemList.Count) inFlight = SafeFetch(fetch, itemList[i + 1]);
+                continue;
+            }
+
+            // Start the NEXT request immediately — before processing the current
+            // response — so the network round-trip for i+1 overlaps with processing
+            // of i. The receiver only ever sees one request at a time either way.
+            if (i + 1 < itemList.Count)
+                inFlight = SafeFetch(fetch, itemList[i + 1]);
+
+            results.Add(await process(currentItem, raw));
+        }
+
+        return results;
+    }
+
+    private static Task<TRaw> SafeFetch<TItem, TRaw>(Func<TItem, Task<TRaw>> fetch, TItem item)
+    {
+        try { return fetch(item); }
+        catch (Exception ex) { return Task.FromException<TRaw>(ex); }
+    }
+}
+
 public class Enigma2Service : IDisposable
 {
     private HttpClient? _http;
@@ -17,6 +94,15 @@ public class Enigma2Service : IDisposable
     private ReceiverConfig? _config;
     private Guid _lastConfigId = Guid.Empty;
     private bool _disposed;
+
+    // Minimum spacing between any two requests actually sent to the receiver. This is
+    // separate from (and on top of) the one-request-at-a-time SequentialPipeline
+    // constraint above — even single, fully sequential requests fired back-to-back the
+    // instant a response lands were still enough to upset some receivers, so this adds
+    // a short forced pause between the END of one request and the START of the next.
+    private static readonly TimeSpan RequestCooldown = TimeSpan.FromMilliseconds(100);
+    private readonly SemaphoreSlim _requestGate = new(1, 1);
+    private DateTime _lastRequestCompletedAt = DateTime.MinValue;
 
     public ReceiverConfig? CurrentConfig => _config;
 
@@ -63,6 +149,7 @@ public class Enigma2Service : IDisposable
         _disposed = true;
         _http?.Dispose();
         _handler?.Dispose();
+        _requestGate.Dispose();
     }
 
     private readonly JsonSerializerSettings _jsonSettings = new JsonSerializerSettings
@@ -128,6 +215,31 @@ public class Enigma2Service : IDisposable
         catch { return "[invalid url]"; }
     }
 
+    /// <summary>
+    /// Wraps a single HTTP call to the receiver with a global cooldown: if another
+    /// request to this receiver completed less than <see cref="RequestCooldown"/> ago,
+    /// waits out the remainder before sending this one. Combined with the one-request-
+    /// at-a-time discipline in SequentialPipeline, this guarantees the receiver never
+    /// sees back-to-back requests with no breathing room between them.
+    /// </summary>
+    private async Task<string> SendThrottledAsync(string url, CancellationToken token)
+    {
+        await _requestGate.WaitAsync(token);
+        try
+        {
+            var elapsedSinceLast = DateTime.UtcNow - _lastRequestCompletedAt;
+            if (elapsedSinceLast < RequestCooldown)
+                await Task.Delay(RequestCooldown - elapsedSinceLast, token);
+
+            return await _http!.GetStringAsync(url, token);
+        }
+        finally
+        {
+            _lastRequestCompletedAt = DateTime.UtcNow;
+            _requestGate.Release();
+        }
+    }
+
     private async Task<string> GetRawResponseAsync(string endpoint, Dictionary<string, string>? query = null)
     {
         if (_config == null) throw new InvalidOperationException("No receiver configured");
@@ -145,7 +257,37 @@ public class Enigma2Service : IDisposable
         using var cts = new CancellationTokenSource(_http.Timeout);
         try
         {
-            return await _http.GetStringAsync(url, cts.Token);
+            return await SendThrottledAsync(url, cts.Token);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Enigma2Service] HTTP error for {SanitizeUrl(url)}: {ex.Message}");
+            throw;
+        }
+    }
+
+    // The AutoTimer plugin exposes its OWN standalone web interface directly at the
+    // receiver root (e.g. http://<receiver>/autotimer), completely separate from
+    // OpenWebif's /web/ and /api/ namespaces — it is not part of OpenWebif at all, so
+    // neither of those prefixes apply here. It returns XML.
+    private async Task<string> GetAutoTimerPluginResponseAsync(string endpoint, Dictionary<string, string>? query = null)
+    {
+        if (_config == null) throw new InvalidOperationException("No receiver configured");
+        if (_http == null) throw new InvalidOperationException("HttpClient not initialised — call SetReceiver first");
+
+        var url = $"{_config.BaseUrl}/{endpoint}";
+        if (query?.Count > 0)
+        {
+            var qs = string.Join("&", query.Select(kv => $"{kv.Key}={HttpUtility.UrlEncode(kv.Value)}"));
+            url += "?" + qs;
+        }
+#if DEBUG
+        Debug.WriteLine($"[Enigma2Service] GET (autotimer plugin/xml) {SanitizeUrl(url)}");
+#endif
+        using var cts = new CancellationTokenSource(_http.Timeout);
+        try
+        {
+            return await SendThrottledAsync(url, cts.Token);
         }
         catch (Exception ex)
         {
@@ -274,16 +416,26 @@ public class Enigma2Service : IDisposable
         return await GetEpgForServiceRangeAsync(serviceRef, now.DateTime, hours);
     }
 
-    public async Task<List<EpgEvent>> GetEpgForServiceRangeAsync(string serviceRef, DateTime start, int hours = 3)
+    public async Task<List<EpgEvent>> GetEpgForServiceRangeAsync(string serviceRef, DateTime start, int hours = 24)
     {
-        // Fetch from start-1h to start+hours to catch programs that began before our window
-        var begin = new DateTimeOffset(start.AddHours(-1)).ToUnixTimeSeconds();
+        // No implicit lookback here — callers control the exact window via `start`
+        // (e.g. GetEpgForGridDayCachedAsync already subtracts 30 minutes for "today" to
+        // catch an in-progress show at the window boundary; other callers that don't
+        // need that can pass an exact boundary).
+        var begin = new DateTimeOffset(start).ToUnixTimeSeconds();
         var end = new DateTimeOffset(start.AddHours(hours)).ToUnixTimeSeconds();
+        // NOTE: OpenWebif's epgservice handler (P_epgservice) reads its time-window
+        // query parameters as "time" and "endTime" — NOT "begin"/"end" (those are the
+        // parameter names for the unrelated timer endpoints like timeradd/timerdelete).
+        // Sending "begin"/"end" here meant the server never recognized them, silently
+        // defaulted both to -1 internally, and fell back to its own default behavior of
+        // "every event from now onward" — which is exactly why past events never
+        // appeared in the EPG grid regardless of what window we asked for client-side.
         var events = await GetEpgEventsAsync("epgservice", new()
         {
             ["sRef"] = serviceRef,
-            ["begin"] = begin.ToString(),
-            ["end"] = end.ToString()
+            ["time"] = begin.ToString(),
+            ["endTime"] = end.ToString()
         });
 
         if (events.Count == 0)
@@ -314,38 +466,95 @@ public class Enigma2Service : IDisposable
         return events;
     }
 
-    /// <summary>Fetches a time window of EPG for all services in a bouquet (for grid view).</summary>
-    public async Task<List<EpgEvent>> GetEpgBouquetTimeWindowAsync(string bouquetRef, DateTime start, int hours = 3)
-    {
-        // Fetch 1h before window start to include programs already in progress
-        var begin = new DateTimeOffset(start.AddHours(-1)).ToUnixTimeSeconds();
-        var end = new DateTimeOffset(start.AddHours(hours)).ToUnixTimeSeconds();
-        var events = await GetEpgEventsAsync("epgbouquet", new()
-        {
-            ["bRef"] = bouquetRef,
-            ["begin"] = begin.ToString(),
-            ["end"] = end.ToString()
-        });
-        Debug.WriteLine($"[Enigma2Service] epgbouquet returned {events.Count} events for {bouquetRef}");
+    /// <summary>Fetches EPG for all services in a bouquet for a given day (start = midnight).</summary>
+    public Task<List<EpgEvent>> GetEpgBouquetTimeWindowAsync(string bouquetRef, DateTime start, int hours = 24)
+        => GetEpgBouquetTimeWindowAsync(bouquetRef, null, start, hours);
 
-        // Fallback: receiver doesn't support bRef time-window — fetch per service in parallel
-        if (events.Count == 0)
+    /// <summary>
+    /// Same as above, but accepts an already-loaded service list for the bouquet to
+    /// avoid a redundant GetServicesAsync round-trip when the caller (e.g. the EPG grid
+    /// ViewModel) already has it loaded and bound. Pass null to have this method fetch
+    /// the service list itself.
+    /// </summary>
+    public async Task<List<EpgEvent>> GetEpgBouquetTimeWindowAsync(string bouquetRef, List<Service>? knownServices, DateTime start, int hours = 24)
+    {
+        // NOTE: deliberately NOT using "epgbouquet" here, even though it accepts
+        // begin/end query parameters. On this (and apparently many) receivers it
+        // ignores them entirely and always returns just the single now-playing event
+        // per channel — which is why the grid view only ever showed one event per
+        // column regardless of the requested time window. Because it never returns
+        // zero events (there's always "something now playing"), a `Count == 0`
+        // fallback check can never trigger, so the broken behavior was silent.
+        var windowStart = start.Date == DateTime.Today.Date
+            ? start.AddMinutes(-30)   // today: slightly before to catch in-progress shows
+            : start;                   // other days: exact midnight
+
+        // "epgmulti" returns EPG for every service in a bouquet in a SINGLE request
+        // (unlike "epgbouquet" above, it does honor begin/end server-side) — this
+        // replaces what used to be one HTTP round-trip per channel with exactly one
+        // round-trip for the whole bouquet, which is both faster and far gentler on
+        // receivers that can't tolerate many requests in a session. Not every
+        // OpenWebif build exposes it, so we fall back to the per-channel path on
+        // failure or on a suspiciously-empty result.
+        var multiEvents = await TryGetEpgMultiAsync(bouquetRef, windowStart, hours);
+        if (multiEvents != null)
         {
-            var services = await GetServicesAsync(bouquetRef);
-            Debug.WriteLine($"[Enigma2Service] epgbouquet fallback: fetching {services.Count} services in parallel");
-            var semaphore = new SemaphoreSlim(4);
-            var tasks = services.Take(50).Select(async svc =>
-            {
-                await semaphore.WaitAsync();
-                try { return await GetEpgForServiceRangeAsync(svc.ServiceReference, start, hours); }
-                finally { semaphore.Release(); }
-            });
-            var results = await Task.WhenAll(tasks);
-            events = results.SelectMany(r => r).ToList();
-            Debug.WriteLine($"[Enigma2Service] epgbouquet fallback got {events.Count} total events");
+            Debug.WriteLine($"[Enigma2Service] GetEpgBouquetTimeWindowAsync: epgmulti got {multiEvents.Count} events for {bouquetRef} in one request");
+            return multiEvents;
         }
 
+        Debug.WriteLine($"[Enigma2Service] GetEpgBouquetTimeWindowAsync: epgmulti unavailable/empty for {bouquetRef}, falling back to per-channel fetch");
+
+        var services = knownServices ?? await GetServicesAsync(bouquetRef);
+        Debug.WriteLine($"[Enigma2Service] GetEpgBouquetTimeWindowAsync: fetching {services.Count} services sequentially (one request in flight at a time) for {bouquetRef}");
+
+        // One HTTP request to the receiver at a time (it can't handle concurrent
+        // requests) — but the next request is issued the moment the previous response
+        // arrives, before that response is parsed, so parsing overlaps with the next
+        // network round-trip instead of the whole thing running fully serially.
+        var perServiceResults = await SequentialPipeline.RunAsync(
+            items: services.Take(50),
+            fetch: svc => GetEpgForServiceRangeAsync(svc.ServiceReference, windowStart, hours),
+            process: (_, raw) => Task.FromResult(raw),
+            onError: (svc, ex) =>
+            {
+                Debug.WriteLine($"[Enigma2Service] EPG fetch failed for {svc.ServiceReference}: {ex.Message}");
+                return new List<EpgEvent>();
+            });
+
+        var events = perServiceResults.SelectMany(r => r).ToList();
+        Debug.WriteLine($"[Enigma2Service] GetEpgBouquetTimeWindowAsync got {events.Count} total events for {bouquetRef}");
+
         return events;
+    }
+
+    /// <summary>
+    /// Single-request fetch of EPG for every channel in a bouquet via "epgmulti".
+    /// Returns null (rather than an empty list) on any failure or on a zero-event
+    /// result, so the caller can distinguish "this receiver doesn't support/like
+    /// epgmulti, fall back" from "epgmulti worked and the bouquet genuinely has no
+    /// events right now" — and, per the no-error-caching rule, so a transient failure
+    /// here is never mistaken by a caller for a real (cacheable) empty result.
+    /// </summary>
+    private async Task<List<EpgEvent>?> TryGetEpgMultiAsync(string bouquetRef, DateTime start, int hours)
+    {
+        var begin = new DateTimeOffset(start).ToUnixTimeSeconds();
+        var end = new DateTimeOffset(start.AddHours(hours)).ToUnixTimeSeconds();
+        try
+        {
+            var events = await GetEpgEventsAsync("epgmulti", new()
+            {
+                ["bRef"] = bouquetRef,
+                ["time"] = begin.ToString(),
+                ["endTime"] = end.ToString()
+            });
+            return events.Count > 0 ? events : null;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Enigma2Service] epgmulti failed for {bouquetRef}: {ex.Message}");
+            return null;
+        }
     }
 
     // ─── Current Service ──────────────────────────────────────────────
@@ -573,46 +782,53 @@ public class Enigma2Service : IDisposable
     {
         try
         {
-            var raw = await GetRawResponseAsync("autotimer");
-            Debug.WriteLine($"[Enigma2Service] AutoTimer raw response (first 500): {(raw.Length > 500 ? raw[..500] : raw)}");
+            // NOTE: this is NOT an OpenWebif endpoint (so neither /api/ nor /web/
+            // apply) — the AutoTimer plugin serves its own standalone interface
+            // directly at the receiver root (http://<receiver>/autotimer), returning
+            // XML, which is why this is parsed differently from the rest of this
+            // service's JSON-based calls.
+            var raw = await GetAutoTimerPluginResponseAsync("autotimer");
+            Debug.WriteLine($"[Enigma2Service] AutoTimer raw XML response (first 500): {(raw.Length > 500 ? raw[..500] : raw)}");
 
-            var token = Newtonsoft.Json.Linq.JToken.Parse(raw);
             var list = new List<AutoTimer>();
-            var js = JsonSerializer.Create(_jsonSettings);
+            var doc = System.Xml.Linq.XDocument.Parse(raw);
 
-            // Navigate to the timer array regardless of nesting depth
-            // Shape A: { "autotimers": { "autotimer": [...] } }
-            // Shape B: { "autotimers": { "autotimer": {...} } }  (single item as object)
-            // Shape C: { "autotimers": [...] }
-            // Shape D: { "autotimer": [...] }  (root level)
-            Newtonsoft.Json.Linq.JToken? arr =
-                token["autotimers"]?["autotimer"]   // Shape A/B
-                ?? token["autotimers"]              // Shape C
-                ?? token["autotimer"];              // Shape D
-
-            Debug.WriteLine($"[Enigma2Service] AutoTimer arr type: {arr?.Type}");
-
-            if (arr == null)
+            // Shape (per the autotimer plugin's XML, as confirmed against a real
+            // receiver response):
+            // <autotimer version="8" nextTimerId="67">
+            //   <defaults .../>
+            //   <timer name="..." match="..." enabled="yes" id="1" from="21:00" to="00:30" ...>
+            //     <e2service>
+            //       <e2servicereference>...</e2servicereference>
+            //       <e2servicename>...</e2servicename>
+            //     </e2service>
+            //     ...
+            //   </timer>
+            //   ...
+            // </autotimer>
+            foreach (var timerEl in doc.Descendants("timer"))
             {
-                Debug.WriteLine("[Enigma2Service] GetAutoTimersAsync: no recognisable autotimer key in response");
-                return [];
-            }
-
-            if (arr.Type == Newtonsoft.Json.Linq.JTokenType.Array)
-            {
-                foreach (var item in arr)
+                var firstService = timerEl.Element("e2service");
+                var at = new AutoTimer
                 {
-                    var at = item.ToObject<AutoTimer>(js);
-                    if (at != null) list.Add(at);
-                }
-            }
-            else if (arr.Type == Newtonsoft.Json.Linq.JTokenType.Object)
-            {
-                var at = arr.ToObject<AutoTimer>(js);
-                if (at != null) list.Add(at);
+                    Id = timerEl.Attribute("id")?.Value ?? "",
+                    Name = timerEl.Attribute("name")?.Value ?? "",
+                    Match = timerEl.Attribute("match")?.Value ?? "",
+                    Enabled = string.Equals(timerEl.Attribute("enabled")?.Value, "yes", StringComparison.OrdinalIgnoreCase),
+                    From = timerEl.Attribute("from")?.Value ?? "",
+                    To = timerEl.Attribute("to")?.Value ?? "",
+                    SearchType = ParseAutoTimerSearchType(timerEl.Attribute("searchType")?.Value),
+                    SearchCase = string.Equals(timerEl.Attribute("searchCase")?.Value, "sensitive", StringComparison.OrdinalIgnoreCase) ? 1 : 0,
+                    JustPlay = timerEl.Attribute("justplay")?.Value == "1" ? 1 : 0,
+                    AvoidDuplicates = int.TryParse(timerEl.Attribute("avoidDuplicateDescription")?.Value, out var avd) ? avd : 0,
+                    ServiceRef = firstService?.Element("e2servicereference")?.Value ?? "",
+                    MaxDuration = int.TryParse(timerEl.Attribute("maxduration")?.Value, out var md) ? md : 0,
+                    Tags = timerEl.Attribute("tags")?.Value ?? "",
+                };
+                list.Add(at);
             }
 
-            Debug.WriteLine($"[Enigma2Service] GetAutoTimersAsync: parsed {list.Count} AutoTimers");
+            Debug.WriteLine($"[Enigma2Service] GetAutoTimersAsync: parsed {list.Count} AutoTimers from XML");
             return list;
         }
         catch (Exception ex)
@@ -622,13 +838,24 @@ public class Enigma2Service : IDisposable
         }
     }
 
-    // (JSON deserialization uses the shared _jsonSettings field)
+    // "searchType" in the autotimer XML is a word (e.g. "start", "exact", "partial"),
+    // not the numeric code the rest of this app's AutoTimer model uses internally for
+    // its own add/edit calls — map the common values; default to 0 (partial/contains)
+    // for anything unrecognised rather than throwing.
+    private static int ParseAutoTimerSearchType(string? value) => value?.ToLowerInvariant() switch
+    {
+        "exact" => 1,
+        "start" => 2,
+        "partial" or null or "" => 0,
+        _ => 0
+    };
 
     public async Task<bool> SaveAutoTimerAsync(AutoTimer timer)
     {
         try
         {
-            // Enigma2 AutoTimer plugin: use /add for new (no id), /edit for existing
+            // Same standalone-plugin situation as GetAutoTimersAsync — these are not
+            // OpenWebif endpoints.
             var endpoint = string.IsNullOrEmpty(timer.Id) ? "autotimer/add" : "autotimer/edit";
             var query = new Dictionary<string, string>
             {
@@ -647,8 +874,14 @@ public class Enigma2Service : IDisposable
             if (timer.MaxDuration > 0) query["maxduration"] = timer.MaxDuration.ToString();
             if (!string.IsNullOrEmpty(timer.Tags)) query["tags"] = timer.Tags;
 
-            var result = await GetAsync<GenericResponse>(endpoint, query);
-            return result?.Result ?? false;
+            // autotimer/add|edit returns XML whose exact success-indicator shape we
+            // haven't confirmed against a live receiver — rather than guess at
+            // parsing it (and risk silently reporting failure on success or vice
+            // versa), treat a successful HTTP response (no exception thrown) as
+            // success. GetAutoTimersAsync's subsequent reload is what the UI actually
+            // relies on to reflect the true state either way.
+            await GetAutoTimerPluginResponseAsync(endpoint, query);
+            return true;
         }
         catch (Exception ex)
         {
@@ -661,8 +894,8 @@ public class Enigma2Service : IDisposable
     {
         try
         {
-            var result = await GetAsync<GenericResponse>("autotimer/remove", new Dictionary<string, string> { ["id"] = id });
-            return result?.Result ?? false;
+            await GetAutoTimerPluginResponseAsync("autotimer/remove", new Dictionary<string, string> { ["id"] = id });
+            return true;
         }
         catch (Exception ex)
         {
@@ -675,7 +908,7 @@ public class Enigma2Service : IDisposable
     {
         try
         {
-            await GetRawResponseAsync("autotimer/parse");
+            await GetAutoTimerPluginResponseAsync("autotimer/parse");
             return true;
         }
         catch { return false; }

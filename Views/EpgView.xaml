@@ -8,7 +8,7 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- Header -->
+        <!-- ── Header ── -->
         <Border Grid.Row="0" Background="{StaticResource BgPanel}"
                 BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,12">
             <Grid>
@@ -24,8 +24,10 @@
                 </Grid.ColumnDefinitions>
 
                 <StackPanel Grid.Column="0" Grid.Row="0">
-                    <TextBlock Text="EPG Guide" FontSize="18" FontWeight="Bold" Foreground="{StaticResource TextPrimary}"/>
-                    <TextBlock Text="{Binding CurrentServiceName}" FontSize="12" Foreground="{StaticResource TextSecondary}"/>
+                    <TextBlock Text="EPG Guide" FontSize="18" FontWeight="Bold"
+                               Foreground="{StaticResource TextPrimary}"/>
+                    <TextBlock Text="{Binding CurrentServiceName}" FontSize="12"
+                               Foreground="{StaticResource TextSecondary}"/>
                 </StackPanel>
 
                 <TextBox Grid.Column="1" Grid.Row="0" Style="{StaticResource DarkTextBox}"
@@ -65,9 +67,10 @@
                     </Button>
                 </StackPanel>
 
-                <!-- Bouquet tabs + grid nav -->
+                <!-- Row 2: Bouquet tabs + navigation -->
                 <StackPanel Grid.Row="1" Grid.ColumnSpan="4" Orientation="Horizontal" Margin="0,10,0,0">
-                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Height="32">
+                    <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                  VerticalScrollBarVisibility="Disabled" Height="32">
                         <ItemsControl ItemsSource="{Binding Bouquets}">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
@@ -76,31 +79,32 @@
                                 <DataTemplate>
                                     <Button Style="{StaticResource IconButton}" Margin="0,0,6,0" Padding="10,4"
                                             Content="{Binding ServiceName}"
-                                            Command="{Binding DataContext.SelectBouquetCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            Command="{Binding DataContext.SelectBouquetCommand,
+                                                      RelativeSource={RelativeSource AncestorType=UserControl}}"
                                             CommandParameter="{Binding}"/>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
                     </ScrollViewer>
 
-                    <!-- List view: channel selector -->
+                    <!-- List mode: channel picker -->
                     <ComboBox Width="240" Margin="8,0,0,0" Style="{StaticResource DarkComboBox}"
                               ItemsSource="{Binding Services}" SelectedItem="{Binding SelectedService}"
                               DisplayMemberPath="ServiceName"
                               Visibility="{Binding IsGridView, Converter={StaticResource BoolToVisibilityInverted}}"/>
 
-                    <!-- Grid view: time navigation -->
+                    <!-- Grid mode: prev/next day -->
                     <StackPanel Orientation="Horizontal" Margin="8,0,0,0"
                                 Visibility="{Binding IsGridView, Converter={StaticResource BoolToVisibility}}">
-                        <Button Style="{StaticResource BaseButton}" Padding="8,5" Margin="0,0,4,0"
-                                Content="◀ -3h" Command="{Binding GridStepBackCommand}"/>
-                        <Button Style="{StaticResource AccentButton}" Padding="8,5" Margin="0,0,4,0"
-                                Content="Now" Command="{Binding GridNowCommand}"/>
-                        <Button Style="{StaticResource BaseButton}" Padding="8,5" Margin="0,0,8,0"
-                                Content="+3h ▶" Command="{Binding GridStepForwardCommand}"/>
-                        <TextBlock VerticalAlignment="Center" FontSize="12"
+                        <Button Style="{StaticResource BaseButton}" Padding="10,5" Margin="0,0,4,0"
+                                Content="◀ Yesterday" Command="{Binding GridStepBackCommand}"/>
+                        <Button Style="{StaticResource AccentButton}" Padding="10,5" Margin="0,0,4,0"
+                                Content="Today" Command="{Binding GridNowCommand}"/>
+                        <Button Style="{StaticResource BaseButton}" Padding="10,5" Margin="0,0,8,0"
+                                Content="Tomorrow ▶" Command="{Binding GridStepForwardCommand}"/>
+                        <TextBlock VerticalAlignment="Center" FontSize="12" FontWeight="Medium"
                                    Foreground="{StaticResource TextSecondary}"
-                                   Text="{Binding GridStart, StringFormat='{}{0:ddd dd.MM HH:mm}'}"/>
+                                   Text="{Binding GridStart, StringFormat='{}{0:dddd\, dd. MMMM yyyy}'}"/>
                     </StackPanel>
                 </StackPanel>
             </Grid>
@@ -144,14 +148,19 @@
                                     <StackPanel Grid.Column="0" VerticalAlignment="Center">
                                         <TextBlock Text="{Binding TimeRange}" FontSize="12" FontWeight="Medium"
                                                    Foreground="{StaticResource Accent}"/>
-                                        <TextBlock Text="{Binding Duration}" FontSize="10" Foreground="{StaticResource TextMuted}"/>
+                                        <TextBlock Text="{Binding Duration}" FontSize="10"
+                                                   Foreground="{StaticResource TextMuted}"/>
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" Margin="12,0">
                                         <StackPanel Orientation="Horizontal">
                                             <Border CornerRadius="3" Padding="5,2" Margin="0,0,8,0"
-                                                    Visibility="{Binding IsCurrentlyAiring, Converter={StaticResource BoolToVisibility}}">
-                                                <Border.Background><SolidColorBrush Color="#EF4444" Opacity="0.2"/></Border.Background>
-                                                <TextBlock Text="LIVE" FontSize="9" FontWeight="Bold" Foreground="{StaticResource AccentRed}"/>
+                                                    Visibility="{Binding IsCurrentlyAiring,
+                                                                 Converter={StaticResource BoolToVisibility}}">
+                                                <Border.Background>
+                                                    <SolidColorBrush Color="#EF4444" Opacity="0.2"/>
+                                                </Border.Background>
+                                                <TextBlock Text="LIVE" FontSize="9" FontWeight="Bold"
+                                                           Foreground="{StaticResource AccentRed}"/>
                                             </Border>
                                             <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold"
                                                        Foreground="{StaticResource TextPrimary}"/>
@@ -159,21 +168,12 @@
                                         <TextBlock Text="{Binding ShortDesc}" FontSize="11"
                                                    Foreground="{StaticResource TextMuted}"
                                                    TextTrimming="CharacterEllipsis" Margin="0,3,0,0"/>
-                                        <Border Height="2" Background="{StaticResource BgPanel}" CornerRadius="1" Margin="0,6,0,0"
-                                                Visibility="{Binding IsCurrentlyAiring, Converter={StaticResource BoolToVisibility}}">
-                                            <Border HorizontalAlignment="Left" Background="{StaticResource Accent}" CornerRadius="1">
-                                                <Border.Width>
-                                                    <MultiBinding Converter="{StaticResource ProgressToWidth}">
-                                                        <Binding Path="ProgressPercent"/>
-                                                        <Binding Path="ActualWidth" RelativeSource="{RelativeSource AncestorType=Border}"/>
-                                                    </MultiBinding>
-                                                </Border.Width>
-                                            </Border>
-                                        </Border>
                                     </StackPanel>
                                     <Button Grid.Column="2" Style="{StaticResource AccentButton}"
-                                            Content="+ Timer" Padding="10,6" FontSize="11" VerticalAlignment="Center"
-                                            Command="{Binding DataContext.RequestAddTimerCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            Content="+ Timer" Padding="10,6" FontSize="11"
+                                            VerticalAlignment="Center"
+                                            Command="{Binding DataContext.RequestAddTimerCommand,
+                                                      RelativeSource={RelativeSource AncestorType=UserControl}}"
                                             CommandParameter="{Binding}"/>
                                 </Grid>
                             </Border>
@@ -183,7 +183,7 @@
             </StackPanel>
         </ScrollViewer>
 
-        <!-- Empty state list view -->
+        <!-- Empty list state -->
         <StackPanel Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center"
                     Visibility="{Binding IsGridView, Converter={StaticResource BoolToVisibilityInverted}}">
             <StackPanel.Style>
@@ -197,202 +197,266 @@
                 </Style>
             </StackPanel.Style>
             <TextBlock Text="📅" FontSize="56" HorizontalAlignment="Center" Opacity="0.2"/>
-            <TextBlock Text="Select a channel to view its EPG" Foreground="{StaticResource TextMuted}"
-                       FontSize="14" HorizontalAlignment="Center" Margin="0,12,0,0"/>
+            <TextBlock Text="Select a channel to view its EPG"
+                       Foreground="{StaticResource TextMuted}" FontSize="14"
+                       HorizontalAlignment="Center" Margin="0,12,0,0"/>
         </StackPanel>
 
-        <!-- ── GRID VIEW: X = Channels (columns), Y = Time (rows) ── -->
-        <Grid Grid.Row="1" Visibility="{Binding IsGridView, Converter={StaticResource BoolToVisibility}}">
+        <!-- ── GRID VIEW: X = Channels (columns), Y = Time (rows, 54px per 30min slot) ── -->
+        <Grid Grid.Row="1"
+              Visibility="{Binding IsGridView, Converter={StaticResource BoolToVisibility}}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="52"/>  <!-- Frozen channel header row -->
+                <RowDefinition Height="*"/>   <!-- Scrollable body -->
+            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="64"/>   <!-- Time label column -->
+                <ColumnDefinition Width="*"/>    <!-- Channel columns -->
+            </Grid.ColumnDefinitions>
+
             <!-- Loading overlay -->
-            <Border Background="#CC000000" Panel.ZIndex="10"
+            <Border Grid.RowSpan="2" Grid.ColumnSpan="2" Background="#CC000000" Panel.ZIndex="20"
                     Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}">
-                <TextBlock Text="{Binding StatusMessage}" Foreground="White" FontSize="14"
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding StatusMessage}" Foreground="White" FontSize="14"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Top-left corner cell (frozen) -->
+            <Border Grid.Row="0" Grid.Column="0"
+                    Background="{StaticResource BgPanel}"
+                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,1"
+                    Panel.ZIndex="10">
+                <TextBlock Text="Time" FontSize="10" Foreground="{StaticResource TextMuted}"
                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Border>
 
+            <!-- Frozen channel headers — horizontal scroll synced via code-behind -->
+            <ScrollViewer Grid.Row="0" Grid.Column="1"
+                          x:Name="HeaderScrollViewer"
+                          HorizontalScrollBarVisibility="Hidden"
+                          VerticalScrollBarVisibility="Disabled"
+                          Panel.ZIndex="10"
+                          PreviewMouseWheel="HeaderScrollViewer_PreviewMouseWheel">
+                <ItemsControl x:Name="ChannelHeaderControl"
+                              ItemsSource="{Binding GridRows}"
+                              HorizontalAlignment="Left">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Width="180" Height="52"
+                                    Background="{StaticResource BgPanel}"
+                                    BorderBrush="{StaticResource BorderBrush}"
+                                    BorderThickness="0,0,1,1">
+                                <StackPanel Orientation="Horizontal"
+                                            VerticalAlignment="Center" Margin="6,0">
+                                    <!-- Channel picon -->
+                                    <Border Width="32" Height="32" Margin="0,0,6,0"
+                                            CornerRadius="4" Background="{StaticResource BgCard}">
+                                        <Image Width="30" Height="30" Stretch="Uniform"
+                                               RenderOptions.BitmapScalingMode="HighQuality">
+                                            <Image.Source>
+                                                <MultiBinding Converter="{StaticResource PiconUrl}"
+                                                              TargetNullValue="{x:Null}"
+                                                              FallbackValue="{x:Null}">
+                                                    <Binding Path="Service.ServiceReference"/>
+                                                    <Binding Path="DataContext.ActiveReceiver"
+                                                             RelativeSource="{RelativeSource AncestorType=Window}"/>
+                                                </MultiBinding>
+                                            </Image.Source>
+                                        </Image>
+                                    </Border>
+                                    <TextBlock Text="{Binding Service.ServiceName}"
+                                               FontSize="11" FontWeight="Medium"
+                                               Foreground="{StaticResource TextPrimary}"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"
+                                               MaxWidth="130"/>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
             <!--
-                Layout:
-                  Top-left corner cell (sticky)  |  Channel header row (scrolls horizontally)
-                  Time labels (scrolls vertically)|  Event cells (scrolls both)
-
-                We use a single ScrollViewer with a Grid inside.
-                Row 0 = channel headers  (sticky via transforms handled by code-behind scroll sync)
-                Col 0 = time axis
-
-                Simpler approach: one ScrollViewer, Grid with header row Height=Auto fixed at top
-                via a separate non-scrolling header + a scrollable body both in the same parent.
+                BODY: single ScrollViewer scrolls BOTH the time axis and event columns together.
+                The inner Grid has:
+                  Col 0 = 64px time labels (48 rows × 54px = 2592px for a full day)
+                  Col 1 = channel event canvases (same total height)
             -->
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="52"/>  <!-- Channel icon/name header row -->
-                    <RowDefinition Height="*"/>   <!-- Scrollable time body -->
-                </Grid.RowDefinitions>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="64"/>   <!-- Time axis -->
-                    <ColumnDefinition Width="*"/>     <!-- Channel columns -->
-                </Grid.ColumnDefinitions>
+            <ScrollViewer Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                          x:Name="BodyScrollViewer"
+                          HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Auto"
+                          ScrollChanged="BodyScrollViewer_ScrollChanged">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="64"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
 
-                <!-- Top-left corner -->
-                <Border Grid.Row="0" Grid.Column="0"
-                        Background="{StaticResource BgPanel}"
-                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,1">
-                    <TextBlock Text="Time" FontSize="10" Foreground="{StaticResource TextMuted}"
-                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                </Border>
-
-                <!-- Channel headers (horizontal scroll synced) -->
-                <ScrollViewer Grid.Row="0" Grid.Column="1"
-                              x:Name="HeaderScrollViewer"
-                              HorizontalScrollBarVisibility="Hidden"
-                              VerticalScrollBarVisibility="Disabled"
-                              PreviewMouseWheel="HeaderScrollViewer_PreviewMouseWheel">
-                    <ItemsControl ItemsSource="{Binding GridRows}" x:Name="ChannelHeaderControl">
+                    <!--
+                        Time axis — StackPanel of 48 borders (24h × 2 slots × 54px = 2592px).
+                        Binding GridTimeSlots generates one label per 30-min slot.
+                    -->
+                    <ItemsControl Grid.Column="0" ItemsSource="{Binding GridTimeSlots}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
-                                <StackPanel Orientation="Horizontal"/>
+                                <StackPanel Orientation="Vertical"/>
                             </ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <!-- Each channel column is 180px wide -->
-                                <Border Width="180" Height="52"
+                                <Border Height="54"
                                         Background="{StaticResource BgPanel}"
                                         BorderBrush="{StaticResource BorderBrush}"
                                         BorderThickness="0,0,1,1">
-                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="6,0">
-                                        <!-- Channel picon -->
-                                        <Border Width="32" Height="32" Margin="0,0,6,0" CornerRadius="4"
-                                                Background="{StaticResource BgCard}">
-                                            <Image Width="30" Height="30" Stretch="Uniform"
-                                                   RenderOptions.BitmapScalingMode="HighQuality">
-                                                <Image.Source>
-                                                    <MultiBinding Converter="{StaticResource PiconUrl}"
-                                                                  TargetNullValue="{x:Null}" FallbackValue="{x:Null}">
-                                                        <Binding Path="Service.ServiceReference"/>
-                                                        <Binding Path="DataContext.ActiveReceiver"
-                                                                 RelativeSource="{RelativeSource AncestorType=Window}"/>
-                                                    </MultiBinding>
-                                                </Image.Source>
-                                            </Image>
-                                        </Border>
-                                        <TextBlock Text="{Binding Service.ServiceName}"
-                                                   FontSize="11" FontWeight="Medium"
-                                                   Foreground="{StaticResource TextPrimary}"
-                                                   VerticalAlignment="Center"
-                                                   TextTrimming="CharacterEllipsis"
-                                                   MaxWidth="130"/>
-                                    </StackPanel>
+                                    <TextBlock Text="{Binding}"
+                                               FontSize="10"
+                                               Foreground="{StaticResource TextSecondary}"
+                                               Margin="4,4,4,0"
+                                               VerticalAlignment="Top"/>
                                 </Border>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                </ScrollViewer>
 
-                <!-- Body: time axis + event cells, scroll together -->
-                <ScrollViewer Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
-                              x:Name="BodyScrollViewer"
-                              HorizontalScrollBarVisibility="Auto"
-                              VerticalScrollBarVisibility="Auto"
-                              ScrollChanged="BodyScrollViewer_ScrollChanged">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="64"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
+                    <!--
+                        Channel columns — one 180px-wide column per channel.
+                        Each column is a Canvas with explicit Height = GridTotalHeight (2592px for 24h).
+                        Events are placed with Canvas.Top=OffsetPx, Height=HeightPx.
+                        The red "now" line runs across all columns at NowLineY.
+                    -->
+                    <ItemsControl Grid.Column="1"
+                                  x:Name="BodyChannelControl"
+                                  ItemsSource="{Binding GridRows}"
+                                  HorizontalAlignment="Left"
+                                  VerticalAlignment="Top">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left"
+                                            VerticalAlignment="Top"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <!--
+                                    IMPORTANT: Width=180 is fixed. Height must match GridTotalHeight
+                                    exactly — the Canvas and its parent Border must be the same height
+                                    as the time-axis column so grid lines align with time labels.
+                                -->
+                                <Canvas Width="180"
+                                        Height="{Binding DataContext.GridTotalHeight,
+                                                 RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        ClipToBounds="True">
+                                    <!-- Right-border separator line -->
+                                    <Rectangle Canvas.Left="179" Canvas.Top="0" Width="1"
+                                               Height="{Binding DataContext.GridTotalHeight,
+                                                        RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                               Fill="{StaticResource BorderBrush}"/>
 
-                        <!-- Time axis (Y) — one label per 30-minute slot, 54px per slot -->
-                        <ItemsControl Grid.Column="0" ItemsSource="{Binding GridTimeSlots}">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate><StackPanel Orientation="Vertical"/></ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Height="54" Background="{StaticResource BgPanel}"
-                                            BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,1">
-                                        <TextBlock Text="{Binding}" FontSize="10"
-                                                   Foreground="{StaticResource TextSecondary}"
-                                                   Margin="4,4,4,0" VerticalAlignment="Top"/>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                                    <!-- Horizontal grid lines at every 30-min slot -->
+                                    <ItemsControl ItemsSource="{Binding DataContext.GridTimeSlots,
+                                                              RelativeSource={RelativeSource AncestorType=UserControl}}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate><Canvas/></ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemContainerStyle>
+                                            <Style TargetType="ContentPresenter">
+                                                <Setter Property="Canvas.Left" Value="0"/>
+                                                <!-- index × 54px — computed via converter below -->
+                                            </Style>
+                                        </ItemsControl.ItemContainerStyle>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <!-- We render a horizontal rule every 54px via the time slots -->
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
 
-                        <!-- Channel event columns (X) — one column per channel, events placed vertically -->
-                        <ItemsControl Grid.Column="1" ItemsSource="{Binding GridRows}"
-                                      x:Name="BodyChannelControl">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <StackPanel Orientation="Horizontal"/>
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <!-- Each channel column: 180px wide, height = slots × 54px -->
-                                    <Border Width="180"
-                                            Background="{StaticResource BgDeep}"
-                                            BorderBrush="{StaticResource BorderBrush}"
-                                            BorderThickness="0,0,1,0"
-                                            ClipToBounds="True">
-                                        <Canvas x:Name="EventCanvas"
-                                                Width="180"
-                                                Height="{Binding DataContext.GridTotalHeight,
-                                                         RelativeSource={RelativeSource AncestorType=UserControl}}">
-                                            <!-- Current-time indicator line -->
-                                            <Rectangle Canvas.Left="0" Width="180" Height="2"
-                                                       Fill="{StaticResource AccentRed}" Panel.ZIndex="5"
-                                                       Canvas.Top="{Binding DataContext.NowLineY,
-                                                                    RelativeSource={RelativeSource AncestorType=UserControl}}"/>
-                                            <!-- Events placed by OffsetPx (vertical) -->
-                                            <ItemsControl ItemsSource="{Binding Events}">
-                                                <ItemsControl.ItemsPanel>
-                                                    <ItemsPanelTemplate><Canvas/></ItemsPanelTemplate>
-                                                </ItemsControl.ItemsPanel>
-                                                <ItemsControl.ItemContainerStyle>
-                                                    <Style TargetType="ContentPresenter">
-                                                        <Setter Property="Canvas.Top" Value="{Binding OffsetPx}"/>
-                                                        <Setter Property="Canvas.Left" Value="1"/>
-                                                        <Setter Property="Width" Value="178"/>
-                                                        <Setter Property="Height" Value="{Binding HeightPx}"/>
-                                                    </Style>
-                                                </ItemsControl.ItemContainerStyle>
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate>
-                                                        <Border Margin="0,1" CornerRadius="3"
-                                                                ClipToBounds="True" BorderThickness="1"
-                                                                ToolTip="{Binding Title}">
-                                                            <Border.Style>
-                                                                <Style TargetType="Border">
-                                                                    <Setter Property="Background" Value="{StaticResource BgCard}"/>
-                                                                    <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
-                                                                    <Style.Triggers>
-                                                                        <DataTrigger Binding="{Binding IsCurrentlyAiring}" Value="True">
-                                                                            <Setter Property="Background" Value="{StaticResource BgHover}"/>
-                                                                            <Setter Property="BorderBrush" Value="{StaticResource Accent}"/>
-                                                                        </DataTrigger>
-                                                                    </Style.Triggers>
-                                                                </Style>
-                                                            </Border.Style>
-                                                            <StackPanel Margin="4,3" VerticalAlignment="Top">
-                                                                <TextBlock Text="{Binding Title}" FontSize="11"
-                                                                           FontWeight="Medium"
-                                                                           Foreground="{StaticResource TextPrimary}"
-                                                                           TextTrimming="CharacterEllipsis"
-                                                                           TextWrapping="NoWrap"/>
-                                                                <TextBlock Text="{Binding TimeRange}" FontSize="9"
-                                                                           Foreground="{StaticResource TextMuted}"/>
-                                                            </StackPanel>
-                                                        </Border>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
-                                        </Canvas>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </Grid>
-                </ScrollViewer>
-            </Grid>
+                                    <!-- Current-time indicator (red horizontal line) -->
+                                    <Rectangle Canvas.Left="0" Width="178" Height="2"
+                                               Fill="{StaticResource AccentRed}" Panel.ZIndex="5"
+                                               Canvas.Top="{Binding DataContext.NowLineY,
+                                                            RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+
+                                    <!-- EPG event blocks -->
+                                    <ItemsControl ItemsSource="{Binding Events}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <Canvas Width="180"
+                                                        Height="{Binding DataContext.GridTotalHeight,
+                                                                 RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemContainerStyle>
+                                            <Style TargetType="ContentPresenter">
+                                                <Setter Property="Canvas.Top"  Value="{Binding OffsetPx}"/>
+                                                <Setter Property="Canvas.Left" Value="1"/>
+                                                <Setter Property="Width"       Value="177"/>
+                                                <Setter Property="Height"      Value="{Binding HeightPx}"/>
+                                            </Style>
+                                        </ItemsControl.ItemContainerStyle>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Margin="0,1" CornerRadius="3"
+                                                        ClipToBounds="True" BorderThickness="1"
+                                                        Cursor="Hand">
+                                                    <Border.ToolTip>
+                                                        <StackPanel MaxWidth="280">
+                                                            <TextBlock Text="{Binding Title}"
+                                                                       FontWeight="Bold" TextWrapping="Wrap"/>
+                                                            <TextBlock Text="{Binding TimeRange}"
+                                                                       Foreground="{StaticResource Accent}"
+                                                                       Margin="0,2,0,0"/>
+                                                            <TextBlock Text="{Binding ShortDesc}"
+                                                                       TextWrapping="Wrap" Margin="0,4,0,0"
+                                                                       Visibility="{Binding ShortDesc,
+                                                                                    Converter={StaticResource NullToVisibility}}"/>
+                                                        </StackPanel>
+                                                    </Border.ToolTip>
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Background"
+                                                                    Value="{StaticResource BgCard}"/>
+                                                            <Setter Property="BorderBrush"
+                                                                    Value="{StaticResource BorderBrush}"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsCurrentlyAiring}"
+                                                                             Value="True">
+                                                                    <Setter Property="Background"
+                                                                            Value="{StaticResource BgHover}"/>
+                                                                    <Setter Property="BorderBrush"
+                                                                            Value="{StaticResource Accent}"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <StackPanel Margin="4,3" VerticalAlignment="Top">
+                                                        <TextBlock Text="{Binding Title}"
+                                                                   FontSize="11" FontWeight="Medium"
+                                                                   Foreground="{StaticResource TextPrimary}"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   TextWrapping="NoWrap"/>
+                                                        <TextBlock Text="{Binding TimeRange}"
+                                                                   FontSize="9"
+                                                                   Foreground="{StaticResource TextMuted}"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Canvas>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+            </ScrollViewer>
         </Grid>
     </Grid>
 </UserControl>

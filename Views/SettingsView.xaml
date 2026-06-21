@@ -253,7 +253,7 @@
                 <StackPanel>
                     <TextBlock FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}">
                         <Run Text="DreamWin"/>
-                        <Run Text="v1.0" Foreground="{StaticResource Accent}"/>
+                        <Run Text="{Binding Source={x:Static local:App.UpdateService}, Path=CurrentVersion, StringFormat='v{0}', Mode=OneWay}" Foreground="{StaticResource Accent}"/>
                     </TextBlock>
                     <TextBlock Text="Windows client for Enigma2 satellite receivers (OpenWebif)"
                                FontSize="12" Foreground="{StaticResource TextMuted}" Margin="0,4,0,0"/>

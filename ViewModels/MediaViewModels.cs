@@ -50,14 +50,15 @@ public partial class EpgViewModel : BaseViewModel
     public const double SlotHeightPx = 54.0;  // 30 min × 1.8px
 
     // Grid view
-    [ObservableProperty] private bool _isGridView;
+    [ObservableProperty] private bool _isGridView = true;  // default: grid view
     [ObservableProperty] private ObservableCollection<EpgGridRow> _gridRows = [];
-    [ObservableProperty] private DateTime _gridStart = SnapToSlot(DateTime.Now);
+    [ObservableProperty] private DateTime _gridStart = DateTime.Today;  // full day: midnight to midnight
 
     // Snap to the nearest 30-minute boundary at or before the given time
+    // Snap time to the nearest 30-minute boundary (used for NowLineY accuracy)
     private static DateTime SnapToSlot(DateTime t)
         => t.Date.AddHours(t.Hour).AddMinutes(t.Minute >= 30 ? 30 : 0);
-    [ObservableProperty] private int _gridHours = 3;
+    [ObservableProperty] private int _gridHours = 24;  // show full day
 
     // Time slot labels: one per 30 min slot along Y axis
     public List<string> GridTimeSlots => Enumerable.Range(0, GridHours * 2)
@@ -102,7 +103,10 @@ public partial class EpgViewModel : BaseViewModel
             });
 
             if (Bouquets.Any())
+            {
+                // Select first bouquet — this will call LoadGridAsync when IsGridView=true
                 await SelectBouquetAsync(Bouquets.First());
+            }
         }, "Loading EPG guide...");
     }
 
@@ -132,9 +136,9 @@ public partial class EpgViewModel : BaseViewModel
             _ = SelectServiceAsync(value);
     }
 
-    // EPG cache: keyed by service reference, expires after 5 minutes
+    // EPG cache: keyed by service reference, expires after 180 seconds.
     private readonly Dictionary<string, (List<EpgEvent> Events, DateTime LoadedAt)> _epgCache = new();
-    private static readonly TimeSpan EpgCacheTtl = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan EpgCacheTtl = TimeSpan.FromSeconds(180);
 
     private async Task<List<EpgEvent>> GetEpgCachedAsync(string serviceRef)
     {
@@ -144,12 +148,152 @@ public partial class EpgViewModel : BaseViewModel
             Debug.WriteLine($"[EpgViewModel] Cache hit for {serviceRef}");
             return cached.Events;
         }
-        var events = await _api.GetEpgForServiceAsync(serviceRef, 48);
+
+        List<EpgEvent> events;
+        try
+        {
+            events = await _api.GetEpgForServiceAsync(serviceRef, 48);
+        }
+        catch (Exception ex)
+        {
+            // Don't cache the failure — surface it to the caller as-is so the UI can
+            // show/handle the error, and let the NEXT call retry against the receiver
+            // instead of silently returning (and re-returning, for a full TTL) nothing.
+            Debug.WriteLine($"[EpgViewModel] GetEpgCachedAsync error for {serviceRef}: {ex.Message}");
+            throw;
+        }
+
+        // A successful-but-empty result is a legitimate cacheable answer (the channel
+        // really has no EPG data right now); only thrown exceptions are treated as
+        // "error, don't cache" above.
         _epgCache[serviceRef] = (events, DateTime.Now);
         return events;
     }
 
-    public void ClearEpgCache() => _epgCache.Clear();
+    // Separate cache for the GRID view, keyed by (serviceRef, day) rather than just
+    // serviceRef. The grid can navigate to arbitrary days — up to 7 days back, and
+    // forward indefinitely — which the list view's single "48h from now" cache above
+    // doesn't correctly cover (a fetch for one day would otherwise either miss data for
+    // other days or silently overwrite the cache entry every other day's view relies on,
+    // since that cache has no day component in its key at all). "Today" still only
+    // needs ONE entry's worth of network traffic per channel even though the visible
+    // grid window can later shift via -3h/+3h or similar without re-fetching, since each
+    // entry covers a full calendar day.
+    private readonly Dictionary<(string ServiceRef, DateTime Day), (List<EpgEvent> Events, DateTime LoadedAt)> _gridEpgCache = new();
+
+    // Bouquet-wide cache populated by a single epgmulti request covering every channel
+    // in a bouquet for one day at once — this is what lets LoadGridAsync avoid ever
+    // touching the per-channel path in the common case. Keyed by (bouquetRef, day);
+    // each entry holds the already-grouped-by-service-ref events for that whole
+    // bouquet/day so individual channels can be sliced out of it with no extra request.
+    private readonly Dictionary<(string BouquetRef, DateTime Day), (Dictionary<string, List<EpgEvent>> ByService, DateTime LoadedAt)> _bouquetGridEpgCache = new();
+
+    /// <summary>
+    /// Tries to satisfy a (bouquetRef, day) grid load with a single epgmulti request
+    /// covering every channel in the bouquet at once, caching the grouped result.
+    /// Returns false (without throwing or caching anything) if epgmulti isn't usable —
+    /// the caller should fall back to the slower per-channel path in that case.
+    /// </summary>
+    private async Task<bool> TryWarmBouquetGridCacheAsync(string bouquetRef, DateTime day)
+    {
+        var dayKey = day.Date;
+        var ttl = dayKey == DateTime.Today ? EpgCacheTtl : TimeSpan.FromHours(12);
+
+        if (_bouquetGridEpgCache.TryGetValue((bouquetRef, dayKey), out var cached) &&
+            DateTime.Now - cached.LoadedAt < ttl)
+        {
+            return true; // already warm
+        }
+
+        var windowStart = dayKey == DateTime.Today ? DateTime.Now.Date.AddMinutes(-30) : dayKey;
+        List<EpgEvent> events;
+        try
+        {
+            events = await _api.GetEpgBouquetTimeWindowAsync(bouquetRef, windowStart, 24);
+        }
+        catch (Exception ex)
+        {
+            // Don't cache failures — see GetEpgForGridDayCachedAsync's note below.
+            Debug.WriteLine($"[EpgViewModel] epgmulti bouquet warm failed for {bouquetRef} on {dayKey:yyyy-MM-dd}: {ex.Message}");
+            return false;
+        }
+
+        if (events.Count == 0)
+        {
+            // Ambiguous: could be a genuinely-empty bouquet, or epgmulti silently
+            // unsupported/blocked on this receiver and GetEpgBouquetTimeWindowAsync's
+            // own per-channel fallback also came back empty. Either way, don't cache a
+            // zero-result bouquet-wide entry — that risks masking a real per-channel
+            // result behind an empty grouped dictionary for the rest of the TTL. Let
+            // the per-channel path (with its own caching) be the source of truth here.
+            return false;
+        }
+
+        var byService = events
+            .GroupBy(e => e.ServiceRef)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        _bouquetGridEpgCache[(bouquetRef, dayKey)] = (byService, DateTime.Now);
+        Debug.WriteLine($"[EpgViewModel] epgmulti warmed grid cache for {bouquetRef} on {dayKey:yyyy-MM-dd}: {events.Count} events across {byService.Count} channels");
+        return true;
+    }
+
+    private async Task<List<EpgEvent>> GetEpgForGridDayCachedAsync(string serviceRef, DateTime day)
+    {
+        var dayKey = day.Date;
+        // "Today" can still be actively changing (a show ending, the next one starting)
+        // so it gets the normal short TTL. Past/future days are immutable once
+        // published, so cache them indefinitely for the lifetime of the app — no point
+        // re-fetching "yesterday" every 180 seconds.
+        var ttl = dayKey == DateTime.Today ? EpgCacheTtl : TimeSpan.FromHours(12);
+
+        if (_gridEpgCache.TryGetValue((serviceRef, dayKey), out var cached) &&
+            DateTime.Now - cached.LoadedAt < ttl)
+        {
+            Debug.WriteLine($"[EpgViewModel] Grid cache hit for {serviceRef} on {dayKey:yyyy-MM-dd}");
+            return cached.Events;
+        }
+
+        // If a bouquet-wide epgmulti fetch already warmed this day (see
+        // TryWarmBouquetGridCacheAsync, called up-front by LoadGridAsync/
+        // PrewarmTodayAndTomorrowAsync), slice this channel's events straight out of
+        // it instead of making a per-channel request at all. A bouquet can be warmed
+        // under more than one bouquet ref over the app's lifetime (e.g. a channel that
+        // appears in two bouquets the user has visited), so check every warmed bouquet
+        // for this day rather than just the currently-selected one.
+        foreach (var ((_, warmedDay), warmed) in _bouquetGridEpgCache)
+        {
+            if (warmedDay != dayKey) continue;
+            if (DateTime.Now - warmed.LoadedAt >= ttl) continue;
+            if (warmed.ByService.TryGetValue(serviceRef, out var sliced))
+            {
+                _gridEpgCache[(serviceRef, dayKey)] = (sliced, warmed.LoadedAt);
+                return sliced;
+            }
+        }
+
+        // Fetch slightly before midnight to catch any program already in progress at
+        // the start of the day, through the following midnight.
+        var windowStart = dayKey == DateTime.Today ? DateTime.Now.Date.AddMinutes(-30) : dayKey;
+
+        // Deliberately NOT catching here: a failure must propagate to the caller
+        // uncached, so the next request for this (service, day) retries against the
+        // receiver instead of being served the same failure-as-empty-list for the rest
+        // of the TTL. LoadGridAsync's SequentialPipeline.onError and
+        // PrewarmTodayAndTomorrowAsync's own try/catch are what turn a thrown
+        // exception into a safely-handled empty result for THEIR callers — this method
+        // itself must stay honest about what actually happened.
+        var events = await _api.GetEpgForServiceRangeAsync(serviceRef, windowStart, 24);
+        _gridEpgCache[(serviceRef, dayKey)] = (events, DateTime.Now);
+        return events;
+    }
+
+    public void ClearEpgCache()
+    {
+        _epgCache.Clear();
+        _gridEpgCache.Clear();
+        _bouquetGridEpgCache.Clear();
+    }
 
     [RelayCommand]
     private async Task SelectServiceAsync(Service service)
@@ -208,24 +352,23 @@ public partial class EpgViewModel : BaseViewModel
     [RelayCommand]
     private async Task GridStepBackAsync()
     {
-        var newStart = GridStart.AddHours(-GridHours);
-        // Don't go more than 7 days in the past
+        var newStart = GridStart.AddDays(-1);
         if (newStart < DateTime.Now.AddDays(-7)) return;
-        GridStart = newStart;
+        GridStart = newStart.Date;
         if (SelectedBouquet != null) await LoadGridAsync();
     }
 
     [RelayCommand]
     private async Task GridStepForwardAsync()
     {
-        GridStart = GridStart.AddHours(GridHours);
+        GridStart = GridStart.AddDays(1).Date;
         if (SelectedBouquet != null) await LoadGridAsync();
     }
 
     [RelayCommand]
     private async Task GridNowAsync()
     {
-        GridStart = SnapToSlot(DateTime.Now);
+        GridStart = DateTime.Today;
         if (SelectedBouquet != null) await LoadGridAsync();
     }
 
@@ -234,16 +377,44 @@ public partial class EpgViewModel : BaseViewModel
         if (SelectedBouquet == null) return;
         await RunAsync(async () =>
         {
-            var events = await _api.GetEpgBouquetTimeWindowAsync(SelectedBouquet.ServiceReference, GridStart, GridHours);
-            var grouped = events
-                .GroupBy(e => e.ServiceRef)
-                .ToDictionary(g => g.Key, g => g.OrderBy(e => e.BeginTimestamp).ToList());
+            var windowStart = GridStart.Date == DateTime.Today.Date
+                ? GridStart.AddMinutes(-30)   // today: slightly before to catch in-progress shows
+                : GridStart;                   // other days: exact midnight
+            var windowEnd = GridStart.AddHours(GridHours);
+
+            // Try to satisfy the WHOLE grid (every channel, this one day) with a
+            // single epgmulti request first. When it succeeds, every per-channel fetch
+            // below becomes a cache hit — zero further requests to the receiver for
+            // this load. Falls back silently to the existing per-channel path when
+            // epgmulti isn't supported/usable on this receiver.
+            await TryWarmBouquetGridCacheAsync(SelectedBouquet.ServiceReference, GridStart);
+
+            // Fetch each channel's EPG for this specific day through the day-scoped
+            // grid cache. One request to the receiver at a time — it crashes under
+            // concurrent requests — but the next channel's request is started the
+            // instant the previous one's response arrives, before that response is
+            // filtered/sorted, so processing overlaps with the next network round-trip
+            // rather than the whole sequence running fully serially. Re-navigating to a
+            // previously-viewed day (e.g. Today -> Tomorrow -> Today) is then served
+            // from cache.
+            var serviceList = Services.ToList();
+            var perServiceResults = await SequentialPipeline.RunAsync(
+                items: serviceList,
+                fetch: svc => GetEpgForGridDayCachedAsync(svc.ServiceReference, GridStart),
+                process: (svc, all) => Task.FromResult((Service: svc, Events: all
+                    .Where(e => e.EndTime > windowStart && e.BeginTime < windowEnd)
+                    .OrderBy(e => e.BeginTimestamp)
+                    .ToList())),
+                onError: (svc, ex) =>
+                {
+                    Debug.WriteLine($"[EpgViewModel] Grid fetch failed for {svc.ServiceReference}: {ex.Message}");
+                    return (Service: svc, Events: new List<EpgEvent>());
+                });
 
             await OnUiAsync(() => GridRows.Clear());
             var gridRowsTemp = new System.Collections.Generic.List<EpgGridRow>();
-            foreach (var svc in Services)
+            foreach (var (svc, evts) in perServiceResults)
             {
-                var evts = grouped.TryGetValue(svc.ServiceReference, out var list) ? list : [];
                 foreach (var e in evts)
                 {
                     // Y = time: 1.8px/min. Events that started before GridStart get negative offset
@@ -260,6 +431,73 @@ public partial class EpgViewModel : BaseViewModel
             }
             await OnUiAsync(() => { foreach (var r in gridRowsTemp) GridRows.Add(r); });
         }, "Loading EPG grid...");
+    }
+
+    // Background prefetch: warms the grid cache for TODAY and TOMORROW for the default
+    // bouquet, so that when the user actually opens the EPG tab, those two days (by far
+    // the most commonly viewed) render instantly from cache instead of waiting on a
+    // round trip per channel. Deliberately does NOT use RunAsync/IsBusy — this runs
+    // silently in the background and must not touch any UI-bound state (Bouquets,
+    // Services, SelectedBouquet, GridRows, busy spinners, error banners) since the user
+    // hasn't navigated to the EPG view yet and may never need to see any of this.
+    // Other days remain purely on-demand, fetched only when actually navigated to.
+    public async Task PrewarmTodayAndTomorrowAsync()
+    {
+        try
+        {
+            var bouquets = await _api.GetBouquetsAsync();
+            var firstBouquet = bouquets.FirstOrDefault(b => b.IsBouquet);
+            if (firstBouquet == null) return;
+
+            var services = await _api.GetServicesAsync(firstBouquet.ServiceReference);
+            var realServices = services.Where(s => !s.IsBouquet).ToList();
+            if (realServices.Count == 0) return;
+
+            var today = DateTime.Today;
+            var tomorrow = today.AddDays(1);
+
+            // Try epgmulti first: one request per day (2 total) covering every channel
+            // in the bouquet, instead of one request per (channel, day) pair. Only
+            // whichever day(s) epgmulti couldn't warm fall back to the slower
+            // per-channel path below.
+            var warmedToday = await TryWarmBouquetGridCacheAsync(firstBouquet.ServiceReference, today);
+            var warmedTomorrow = await TryWarmBouquetGridCacheAsync(firstBouquet.ServiceReference, tomorrow);
+
+            var daysNeedingFallback = new List<DateTime>();
+            if (!warmedToday) daysNeedingFallback.Add(today);
+            if (!warmedTomorrow) daysNeedingFallback.Add(tomorrow);
+
+            if (daysNeedingFallback.Count == 0)
+            {
+                Debug.WriteLine($"[EpgViewModel] Prewarm complete via epgmulti: {realServices.Count} channels x 2 days for {firstBouquet.ServiceName} in 2 requests");
+                return;
+            }
+
+            // Same one-at-a-time constraint as LoadGridAsync — the receiver can't
+            // handle concurrent requests — but each next (channel, day) request starts
+            // as soon as the previous response arrives, overlapping with caching/
+            // processing of that previous response.
+            var prewarmItems = realServices.SelectMany(svc => daysNeedingFallback
+                .Select(day => (Service: svc, Day: day)));
+
+            await SequentialPipeline.RunAsync<(Service Service, DateTime Day), List<EpgEvent>, bool>(
+                items: prewarmItems,
+                fetch: item => GetEpgForGridDayCachedAsync(item.Service.ServiceReference, item.Day),
+                process: (_, _) => Task.FromResult(true),
+                onError: (item, ex) =>
+                {
+                    // Best-effort prefetch — a failure here just means that channel/day
+                    // will fetch normally (and visibly) when the user gets to it.
+                    Debug.WriteLine($"[EpgViewModel] Prewarm failed for {item.Service.ServiceReference} on {item.Day:yyyy-MM-dd}: {ex.Message}");
+                    return true;
+                });
+
+            Debug.WriteLine($"[EpgViewModel] Prewarm complete: {realServices.Count} channels x {daysNeedingFallback.Count} day(s) via per-channel fallback for {firstBouquet.ServiceName}");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[EpgViewModel] PrewarmTodayAndTomorrowAsync error: {ex}");
+        }
     }
 }
 

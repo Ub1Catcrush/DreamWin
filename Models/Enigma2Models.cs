@@ -220,7 +220,7 @@ public class SignalStatus
     public int? Snr { get; set; }
 
     [JsonProperty("snr_db")]
-    public int? SnrDb { get; set; }
+    public double? SnrDb { get; set; }
 
     [JsonProperty("agc")]
     public int? Agc { get; set; }

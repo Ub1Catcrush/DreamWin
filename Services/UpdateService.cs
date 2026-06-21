@@ -31,8 +31,11 @@ public class UpdateService
     public UpdateService(string currentVersion)
     {
         _currentVersion = currentVersion;
-        _httpClient.DefaultRequestHeaders.Add("User-Agent", "DreamWin-UpdateChecker");
+        if (!_httpClient.DefaultRequestHeaders.Contains("User-Agent"))
+            _httpClient.DefaultRequestHeaders.Add("User-Agent", "DreamWin-UpdateChecker");
     }
+
+    public string CurrentVersion => _currentVersion;
 
     /// <summary>
     /// Checks GitHub for the latest release
@@ -79,14 +82,16 @@ public class UpdateService
                 if (string.IsNullOrEmpty(release.DownloadUrl))
                     continue;
 
-                // Check if this version is newer than current
+                // Compare release tag vs current version
+                Debug.WriteLine($"[UpdateService] tag='{release.TagName}' current='{_currentVersion}'");
                 if (IsNewerVersion(release.TagName, _currentVersion))
                 {
+                    Debug.WriteLine($"[UpdateService] UPDATE AVAILABLE: {release.TagName}");
                     UpdateAvailable?.Invoke(this, $"New version available: {release.Name}");
                     return release;
                 }
 
-                // Return the first matching release (latest)
+                Debug.WriteLine($"[UpdateService] Already up to date (latest={release.TagName})");
                 return null;
             }
 

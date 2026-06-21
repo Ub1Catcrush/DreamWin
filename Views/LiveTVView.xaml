@@ -428,6 +428,19 @@
                                 </ListBox>
                             </Grid>
                         </Border>
+
+                        <!-- Channel-switch mask: the actual VLC video surface is a native
+                             child window two layers below WPF (see LibVLCSharp.WPF "airspace"
+                             hack), so none of the Background="Black" properties above ever
+                             reach it. When VLC's surface has nothing decoded yet — briefly
+                             when switching channels — Windows paints that native window's
+                             own default (white) background straight through, causing a
+                             jarring white flash. This Border lives in the SAME top WPF overlay
+                             layer as the controls above (i.e. it DOES reach the screen), and
+                             PlayStream briefly shows it to mask that gap until the first frame
+                             of the new stream actually arrives. -->
+                        <Border x:Name="ChannelSwitchMask" Background="Black"
+                                Visibility="Collapsed" IsHitTestVisible="False"/>
                     </Grid>
                 </vlc:VideoView>
             </Border>

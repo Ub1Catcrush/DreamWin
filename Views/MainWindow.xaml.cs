@@ -93,7 +93,11 @@ public partial class MainWindow : Window
                 return _liveTvView;
 
             case AppView.EPG:
-                return new EpgView { DataContext = _vm.Epg };
+                var epgView = new EpgView { DataContext = _vm.Epg };
+                // After layout, scroll the grid to the current time
+                epgView.Dispatcher.InvokeAsync(epgView.ScrollToNow,
+                    System.Windows.Threading.DispatcherPriority.Background);
+                return epgView;
 
             case AppView.Timers:
                 return new TimersView { DataContext = _vm.Timers };

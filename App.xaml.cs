@@ -51,7 +51,12 @@ public partial class App : Application
         splash.SetStatus("Loading settings…");
         SettingsService = new SettingsService();
         Enigma2 = new Enigma2Service();
-        UpdateService = new UpdateService("1.0.0");
+        // Read version from the compiled assembly — keeps it in sync with csproj <Version>
+        var asmVersion = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+        var appVersion = asmVersion != null
+            ? $"{asmVersion.Major}.{asmVersion.Minor}.{asmVersion.Build}"
+            : "1.0.0";
+        UpdateService = new UpdateService(appVersion);
         MainVM = new MainViewModel(SettingsService, Enigma2);
 
         // Warn user if settings file was corrupted/unreadable
@@ -83,15 +88,34 @@ public partial class App : Application
             if (splashClosed) return;
             splashClosed = true;
             LiveTVView.VlcReady -= CloseSplashOnce;
-            splash.Close();
-            mainWindow.Activate();
+            // Wait one more render frame so the main window is fully painted before splash disappears
+            mainWindow.Dispatcher.InvokeAsync(() =>
+            {
+                splash.Close();
+                mainWindow.Activate();
+            }, System.Windows.Threading.DispatcherPriority.Render);
         }
 
+        // VlcReady fires after LibVLC Core.Initialize() in LiveTVView — reliable signal
+        // that the heaviest startup work is done and the window is ready for use.
         LiveTVView.VlcReady += CloseSplashOnce;
-        mainWindow.Loaded += (_, _) => CloseSplashOnce();
+
+        // ContentRendered fires after the first frame is fully painted on screen (later than Loaded).
+        // Use as fallback in case the user navigates away from LiveTV before VlcReady fires.
+        mainWindow.ContentRendered += (_, _) =>
+        {
+            // Delay slightly so the window is fully visible before splash disappears
+            _ = mainWindow.Dispatcher.InvokeAsync(async () =>
+            {
+                await Task.Delay(500);
+                CloseSplashOnce();
+            });
+        };
+
+        // Hard timeout: 12 seconds max for splash regardless of what happens
         _ = Dispatcher.InvokeAsync(async () =>
         {
-            await Task.Delay(TimeSpan.FromSeconds(8));
+            await Task.Delay(TimeSpan.FromSeconds(12));
             CloseSplashOnce();
         });
 

@@ -8,6 +8,7 @@
     <AssemblyName>DreamWin</AssemblyName>
     <RootNamespace>DreamWin</RootNamespace>
     <Version>1.0.0</Version>
+    <ApplicationIcon>dreamwin.ico</ApplicationIcon>
     <Authors>DreamWin</Authors>
     <Description>Enigma2 Windows Client</Description>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>

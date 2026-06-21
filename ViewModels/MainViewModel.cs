@@ -121,6 +121,11 @@ public partial class MainViewModel : BaseViewModel
                 _reconnectFailCount = 0;
                 await LiveTV.LoadBouquetsAsync();
                 StartHealthMonitor();
+
+                // Warm the EPG grid cache for today/tomorrow in the background so the
+                // EPG tab renders instantly once the user actually navigates there,
+                // without delaying startup or showing any loading indicator for it.
+                _ = Epg.PrewarmTodayAndTomorrowAsync();
             }
         }, "Connecting...");
     }
