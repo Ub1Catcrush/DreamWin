@@ -153,8 +153,8 @@
         <Grid Grid.Column="2">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*"/>
-                <RowDefinition Height="6"/>
-                <RowDefinition Height="200"/>
+                <RowDefinition x:Name="NowNextSplitterRow" Height="6"/>
+                <RowDefinition x:Name="NowNextRow" Height="200"/>
             </Grid.RowDefinitions>
 
             <!-- Video Player -->
@@ -175,13 +175,6 @@
                                        Foreground="{StaticResource TextMuted}"
                                        FontSize="14" HorizontalAlignment="Center" Margin="0,12,0,0"/>
                         </StackPanel>
-
-                        <!-- Channel-switch mask: the native VLC render surface briefly shows its
-                             default background (often white) between Stop() and the first decoded
-                             frame of the next stream — this is a known LibVLCSharp.WPF airspace
-                             limitation, not fixable via the VideoView's own Background property.
-                             Covering it with an opaque WPF layer hides that flash entirely. -->
-                        <Border x:Name="ChannelSwitchMask" Background="Black" Visibility="Collapsed"/>
 
                         <!-- Player Controls Overlay: always visible when playing normal, auto-hides in fullscreen -->
                         <Border x:Name="PlayerControlsOverlay" VerticalAlignment="Bottom" Background="#CC000000"
@@ -439,11 +432,11 @@
                 </vlc:VideoView>
             </Border>
 
-            <GridSplitter Grid.Row="1" Height="6" HorizontalAlignment="Stretch"
+            <GridSplitter x:Name="NowNextSplitter" Grid.Row="1" Height="6" HorizontalAlignment="Stretch"
                           Background="{StaticResource BorderBrush}" ResizeDirection="Rows"/>
 
             <!-- Now/Next Info Bar -->
-            <Border Grid.Row="2" Background="{StaticResource BgPanel}"
+            <Border x:Name="NowNextBar" Grid.Row="2" Background="{StaticResource BgPanel}"
                     BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0"
                     Padding="16,10"
                     Visibility="{Binding CurrentEvent, Converter={StaticResource NullToVisibility}}">

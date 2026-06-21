@@ -141,10 +141,20 @@ public partial class LiveTVView : UserControl
     private void EnterFullscreenOverlayMode()
     {
         // Fullscreen video should show nothing but the video itself plus the transient
-        // auto-hiding overlays — the permanent channel-list column is not part of that.
+        // auto-hiding overlays — the permanent channel-list column and the now/next info
+        // bar below the video are not part of that.
+        // MinWidth must be cleared too: a ColumnDefinition's Width is clamped by its
+        // MinWidth regardless of what Width is set to, so Width=0 alone does nothing
+        // while MinWidth="260" (set in XAML) is still in effect.
+        ChannelListColumn.MinWidth = 0;
         ChannelListColumn.Width = new GridLength(0);
         ChannelListGutterColumn.Width = new GridLength(0);
         if (ChannelListPanel != null) ChannelListPanel.Visibility = Visibility.Collapsed;
+
+        NowNextSplitterRow.Height = new GridLength(0);
+        NowNextRow.Height = new GridLength(0);
+        if (NowNextSplitter != null) NowNextSplitter.Visibility = Visibility.Collapsed;
+        if (NowNextBar != null) NowNextBar.Visibility = Visibility.Collapsed;
 
         // Show overlays initially, then auto-hide
         ShowFullscreenOverlays();
@@ -153,8 +163,14 @@ public partial class LiveTVView : UserControl
     private void ExitFullscreenOverlayMode()
     {
         ChannelListColumn.Width = new GridLength(320);
+        ChannelListColumn.MinWidth = 260;
         ChannelListGutterColumn.Width = new GridLength(6);
         if (ChannelListPanel != null) ChannelListPanel.Visibility = Visibility.Visible;
+
+        NowNextSplitterRow.Height = new GridLength(6);
+        NowNextRow.Height = new GridLength(200);
+        if (NowNextSplitter != null) NowNextSplitter.Visibility = Visibility.Visible;
+        if (NowNextBar != null) NowNextBar.Visibility = Visibility.Visible;
 
         _overlayTimer?.Stop();
         // Restore controls visibility (it's bound to IsPlaying normally)
@@ -170,7 +186,6 @@ public partial class LiveTVView : UserControl
     {
         if (_vm == null) return;
 
-        // Save scroll position when bouquet changes, restore for new bouquet
         if (e.PropertyName == nameof(LiveTVViewModel.IsFullscreen))
         {
             if (_vm.IsFullscreen)
@@ -180,6 +195,7 @@ public partial class LiveTVView : UserControl
             return;
         }
 
+        // Save scroll position when bouquet changes, restore for new bouquet
         if (e.PropertyName == nameof(LiveTVViewModel.SelectedBouquet))
         {
             SaveChannelScrollPosition();
@@ -254,11 +270,7 @@ public partial class LiveTVView : UserControl
     {
         if (_mediaPlayer == null || _vm == null) return;
 
-        Dispatcher.InvokeAsync(() =>
-        {
-            ChannelSwitchMask.Visibility = Visibility.Collapsed;
-            RefreshAudioTracks();
-        });
+        Dispatcher.InvokeAsync(RefreshAudioTracks);
     }
 
             private void OnMediaPlayerEsAdded(object? sender, EventArgs e)
@@ -317,10 +329,6 @@ public partial class LiveTVView : UserControl
     {
         if (_libVlc == null || _mediaPlayer == null || string.IsNullOrEmpty(url)) return;
 
-        // Cover the native video surface before Stop()/Play() so the brief native-window
-        // flash in between is hidden. Removed once Playing fires (see OnMediaPlayerPlaying).
-        ChannelSwitchMask.Visibility = Visibility.Visible;
-
         try
         {
             // Stop current playback cleanly to prevent white flash between streams
@@ -343,8 +351,6 @@ public partial class LiveTVView : UserControl
         catch (Exception ex)
         {
             Debug.WriteLine($"[LiveTV] PlayStream error: {ex}");
-            // Playing won't fire if Play() itself failed — don't leave the mask stuck up.
-            ChannelSwitchMask.Visibility = Visibility.Collapsed;
         }
 
         _ = Task.Run(async () =>
@@ -353,14 +359,6 @@ public partial class LiveTVView : UserControl
             _ = Dispatcher.InvokeAsync(RefreshAudioTracks);
             await Task.Delay(1500);
             _ = Dispatcher.InvokeAsync(RefreshAudioTracks);
-        });
-
-        // Safety net: if Playing never fires (e.g. the stream stalls or errors out after
-        // Play() returned successfully), don't leave the screen black indefinitely.
-        _ = Task.Run(async () =>
-        {
-            await Task.Delay(6000);
-            _ = Dispatcher.InvokeAsync(() => ChannelSwitchMask.Visibility = Visibility.Collapsed);
         });
     }
 

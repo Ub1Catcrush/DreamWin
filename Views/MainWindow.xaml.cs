@@ -44,7 +44,12 @@ public partial class MainWindow : Window
                 ShowView(_vm.CurrentView);
         };
 
-        SourceInitialized += (_, _) => Debug.WriteLine("[MainWindow] SourceInitialized");
+        SourceInitialized += (_, _) =>
+        {
+            Debug.WriteLine("[MainWindow] SourceInitialized");
+            InstallLowLevelMouseHook();
+        };
+        Closed += (_, _) => RemoveLowLevelMouseHook();
         Activated += (_, _) => Debug.WriteLine("[MainWindow] Activated");
         Deactivated += (_, _) => Debug.WriteLine("[MainWindow] Deactivated");
         IsVisibleChanged += (_, _) => Debug.WriteLine($"[MainWindow] IsVisibleChanged -> {IsVisible}");
@@ -131,13 +136,35 @@ public partial class MainWindow : Window
     private void OnWindowStateChanged(object? sender, EventArgs e)
     {
         Debug.WriteLine($"[MainWindow] StateChanged -> {WindowState}");
+
+        // While in fullscreen video mode, bounds are set explicitly by
+        // ApplyFullMonitorBounds() instead of relying on WindowState.Maximized — skip
+        // the work-area cap entirely so it doesn't fight with that.
+        if (_isInFullscreenVideo)
+        {
+            MaxWidth  = double.PositiveInfinity;
+            MaxHeight = double.PositiveInfinity;
+            return;
+        }
+
         if (WindowState == WindowState.Maximized)
         {
-            var workArea = GetCurrentMonitorBounds(useWorkArea: true);
-            if (workArea.HasValue)
+            // WPF bug: WindowChrome + WindowStyle.None ignores WorkArea when maximized,
+            // causing the window to extend behind the taskbar.
+            // Fix: cap MaxHeight/MaxWidth to the current monitor WorkArea via Win32 interop.
+            var helper = new System.Windows.Interop.WindowInteropHelper(this);
+            var src = PresentationSource.FromVisual(this);
+            var dpiX = src?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
+            var dpiY = src?.CompositionTarget?.TransformToDevice.M22 ?? 1.0;
+
+            // Use MonitorFromWindow + GetMonitorInfo for per-monitor DPI awareness
+            var hMonitor = NativeMethods.MonitorFromWindow(helper.Handle, 2 /*MONITOR_DEFAULTTONEAREST*/);
+            var info = new NativeMethods.MONITORINFO();
+            info.cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf(info);
+            if (NativeMethods.GetMonitorInfo(hMonitor, ref info))
             {
-                MaxWidth = workArea.Value.Width;
-                MaxHeight = workArea.Value.Height;
+                MaxWidth  = (info.rcWork.right  - info.rcWork.left)  / dpiX;
+                MaxHeight = (info.rcWork.bottom - info.rcWork.top)   / dpiY;
             }
             else
             {
@@ -154,6 +181,37 @@ public partial class MainWindow : Window
     }
 
     private void CloseClick(object sender, RoutedEventArgs e) => Close();
+
+    // Sets Left/Top/Width/Height to the CURRENT monitor's full bounds (rcMonitor, which
+    // includes the taskbar area) rather than relying on WindowState.Maximized. This is
+    // what actually makes fullscreen video cover every pixel with no hairline gap.
+    private void ApplyFullMonitorBounds()
+    {
+        var helper = new System.Windows.Interop.WindowInteropHelper(this);
+        var src = PresentationSource.FromVisual(this);
+        var dpiX = src?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
+        var dpiY = src?.CompositionTarget?.TransformToDevice.M22 ?? 1.0;
+
+        var hMonitor = NativeMethods.MonitorFromWindow(helper.Handle, 2 /*MONITOR_DEFAULTTONEAREST*/);
+        var info = new NativeMethods.MONITORINFO();
+        info.cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf(info);
+        if (NativeMethods.GetMonitorInfo(hMonitor, ref info))
+        {
+            Left   = info.rcMonitor.left / dpiX;
+            Top    = info.rcMonitor.top / dpiY;
+            Width  = (info.rcMonitor.right  - info.rcMonitor.left) / dpiX;
+            Height = (info.rcMonitor.bottom - info.rcMonitor.top)  / dpiY;
+        }
+        else
+        {
+            // Fallback: SystemParameters only knows the primary monitor and its work
+            // area, but it's better than nothing if the Win32 call somehow fails.
+            Left   = 0;
+            Top    = 0;
+            Width  = SystemParameters.PrimaryScreenWidth;
+            Height = SystemParameters.PrimaryScreenHeight;
+        }
+    }
 
     private void ToggleFullscreen(bool fullscreen)
     {
@@ -180,36 +238,29 @@ public partial class MainWindow : Window
             if (SidebarBorder != null)
                 SidebarBorder.Visibility = Visibility.Collapsed;
 
+            // Collapse the 1px outer chrome border too — otherwise it's drawn right at
+            // the monitor edge and a sliver of desktop/taskbar peeks through behind it.
+            if (OuterChromeBorder != null)
+                OuterChromeBorder.BorderThickness = new Thickness(0);
+
+            // _isInFullscreenVideo is now true, so OnWindowStateChanged (below) will skip
+            // its usual work-area cap.
             WindowStyle = WindowStyle.None;
             ResizeMode = ResizeMode.NoResize;
             Topmost = true;
-
-            // Clear any work-area cap left over from OnWindowStateChanged (e.g. if the
-            // window was maximized before going fullscreen) — otherwise the full-monitor
-            // bounds we're about to set below would get clipped right back to the work area.
             MaxWidth = double.PositiveInfinity;
             MaxHeight = double.PositiveInfinity;
 
-            // Cover the ENTIRE monitor, including the area normally reserved for the
-            // taskbar — WindowState.Maximized can't do this on its own here, since
-            // OnWindowStateChanged deliberately caps maximized windows to the work area
-            // (so the *normal* maximized UI doesn't sit behind the taskbar). Fullscreen
-            // video wants the opposite: go behind/over the taskbar entirely. Force Normal
-            // first so that capping logic doesn't fight these manually-set bounds.
+            // Deliberately NOT using WindowState.Maximized here. With WindowChrome +
+            // WindowStyle.None, WPF's maximize layout leaves a 1px gap on the left/top/
+            // right edges versus the true monitor bounds (related to the invisible resize
+            // border WindowChrome still reserves even with ResizeMode.NoResize) — that gap
+            // is exactly the "hairline of desktop/taskbar visible at the edges" bug.
+            // Instead we stay in WindowState.Normal and set Left/Top/Width/Height to the
+            // monitor's FULL bounds (rcMonitor, not rcWork) ourselves via Win32, which
+            // covers the screen pixel-for-pixel including the taskbar area.
             WindowState = WindowState.Normal;
-            var bounds = GetCurrentMonitorBounds(useWorkArea: false);
-            if (bounds.HasValue)
-            {
-                Left = bounds.Value.Left;
-                Top = bounds.Value.Top;
-                Width = bounds.Value.Width;
-                Height = bounds.Value.Height;
-            }
-            else
-            {
-                // Fallback if Win32 interop fails for some reason
-                WindowState = WindowState.Maximized;
-            }
+            ApplyFullMonitorBounds();
 
             StartCursorHideTimer();
         }
@@ -228,6 +279,10 @@ public partial class MainWindow : Window
             if (SidebarBorder != null)
                 SidebarBorder.Visibility = Visibility.Visible;
 
+            // Restore the 1px outer chrome border now that we're back to windowed mode.
+            if (OuterChromeBorder != null)
+                OuterChromeBorder.BorderThickness = new Thickness(1);
+
             Topmost = false;
             ResizeMode = ResizeMode.CanResize;
             WindowStyle = WindowStyle.None;
@@ -235,7 +290,9 @@ public partial class MainWindow : Window
             // Restore exactly what was there before fullscreen was entered.
             if (_preFullscreenState == WindowState.Maximized)
             {
-                WindowState = WindowState.Maximized; // OnWindowStateChanged re-caps to the work area
+                // _isInFullscreenVideo is already false, so this re-triggers
+                // OnWindowStateChanged's normal work-area cap.
+                WindowState = WindowState.Maximized;
             }
             else
             {
@@ -249,32 +306,6 @@ public partial class MainWindow : Window
             _cursorTimer?.Stop();
             Mouse.OverrideCursor = null;
         }
-    }
-
-    /// <summary>
-    /// Returns the current monitor's full bounds (useWorkArea: false) or work area
-    /// (useWorkArea: true) in WPF device-independent units, or null if the Win32 lookup
-    /// failed (caller should fall back to WindowState.Maximized in that case).
-    /// </summary>
-    private Rect? GetCurrentMonitorBounds(bool useWorkArea)
-    {
-        var helper = new System.Windows.Interop.WindowInteropHelper(this);
-        var src = PresentationSource.FromVisual(this);
-        var dpiX = src?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
-        var dpiY = src?.CompositionTarget?.TransformToDevice.M22 ?? 1.0;
-
-        var hMonitor = NativeMethods.MonitorFromWindow(helper.Handle, 2 /*MONITOR_DEFAULTTONEAREST*/);
-        var info = new NativeMethods.MONITORINFO();
-        info.cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf(info);
-        if (!NativeMethods.GetMonitorInfo(hMonitor, ref info))
-            return null;
-
-        var rect = useWorkArea ? info.rcWork : info.rcMonitor;
-        return new Rect(
-            rect.left / dpiX,
-            rect.top / dpiY,
-            (rect.right - rect.left) / dpiX,
-            (rect.bottom - rect.top) / dpiY);
     }
 
     private System.Windows.Threading.DispatcherTimer? _cursorTimer;
@@ -296,16 +327,100 @@ public partial class MainWindow : Window
         _cursorTimer.Start();
     }
 
+    // ── Low-level mouse hook ─────────────────────────────────────────────────
+    //
+    // Why this is needed: the LibVLC VideoView hosts video rendering in a real,
+    // separate native CHILD HWND (via HwndHost) — not just a WPF-drawn element.
+    // Mouse messages over that child HWND are delivered to ITS OWN window
+    // procedure, not the top-level MainWindow's. That means:
+    //   - WPF's routed MouseMove/MouseDown events never fire for it (they only
+    //     traverse the WPF visual tree, which stops at the HwndHost boundary).
+    //   - Even Win32-level HwndSource.AddHook on the top-level window's HWND
+    //     does NOT see these messages, because they simply never reach that
+    //     HWND's WndProc — they go straight to the child's.
+    // Since fullscreen video is almost entirely video surface, essentially all
+    // mouse activity was being lost, so the auto-hiding overlay showed once on
+    // entry and then never reappeared.
+    //
+    // The reliable fix is a system-wide low-level mouse hook (WH_MOUSE_LL),
+    // which intercepts mouse input in the OS input pipeline before it's even
+    // dispatched to any specific HWND, so it sees activity over the video
+    // surface, the rest of the window, and anywhere else alike.
+    private const int WH_MOUSE_LL = 14;
+    private const int WM_MOUSEMOVE = 0x0200;
+    private const int WM_LBUTTONDOWN = 0x0201;
+    private const int WM_RBUTTONDOWN = 0x0204;
+    private const int WM_MBUTTONDOWN = 0x0207;
+
+    private NativeMethods.LowLevelMouseProc? _mouseHookProc;
+    private IntPtr _mouseHookHandle = IntPtr.Zero;
+
+    private void InstallLowLevelMouseHook()
+    {
+        if (_mouseHookHandle != IntPtr.Zero) return;
+
+        // Keep a reference to the delegate for the hook's lifetime — otherwise the GC
+        // can collect it while it's still registered with the OS, crashing the process.
+        _mouseHookProc = LowLevelMouseHookCallback;
+
+        using var curProcess = Process.GetCurrentProcess();
+        using var curModule = curProcess.MainModule!;
+        _mouseHookHandle = NativeMethods.SetWindowsHookEx(
+            WH_MOUSE_LL,
+            _mouseHookProc,
+            NativeMethods.GetModuleHandle(curModule.ModuleName!),
+            0);
+
+        if (_mouseHookHandle == IntPtr.Zero)
+            Debug.WriteLine("[MainWindow] Failed to install low-level mouse hook");
+    }
+
+    private void RemoveLowLevelMouseHook()
+    {
+        if (_mouseHookHandle == IntPtr.Zero) return;
+        NativeMethods.UnhookWindowsHookEx(_mouseHookHandle);
+        _mouseHookHandle = IntPtr.Zero;
+        _mouseHookProc = null;
+    }
+
+    private IntPtr LowLevelMouseHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        if (nCode >= 0)
+        {
+            var msg = wParam.ToInt32();
+            if (msg is WM_MOUSEMOVE or WM_LBUTTONDOWN or WM_RBUTTONDOWN or WM_MBUTTONDOWN)
+            {
+                // Only react while THIS window is the active/foreground one, and
+                // marshal back onto the UI thread since hook callbacks run inline
+                // with the global input pipeline, not on our Dispatcher thread.
+                if (IsActive)
+                {
+                    Dispatcher.BeginInvoke(new Action(OnFullscreenUserActivity));
+                }
+            }
+        }
+
+        return NativeMethods.CallNextHookEx(_mouseHookHandle, nCode, wParam, lParam);
+    }
+
+    // Shared "user is active" handling for fullscreen video — shows the cursor, resets
+    // its auto-hide timer, and tells LiveTVView to re-show its overlays. Called both
+    // from the normal WPF OnMouseMove override (covers input when not in fullscreen,
+    // or over plain WPF-drawn areas) and from the low-level mouse hook (covers input
+    // over the VLC video's native child HWND, which WPF routed events never see).
+    private void OnFullscreenUserActivity()
+    {
+        if (_vm?.LiveTV.IsFullscreen != true) return;
+
+        Mouse.OverrideCursor = null;
+        StartCursorHideTimer();
+        _liveTvView?.OnFullscreenMouseMove();
+    }
+
     protected override void OnMouseMove(System.Windows.Input.MouseEventArgs e)
     {
         base.OnMouseMove(e);
-        if (_vm?.LiveTV.IsFullscreen == true)
-        {
-            Mouse.OverrideCursor = null;
-            StartCursorHideTimer();
-            // Notify LiveTVView to show overlays
-            _liveTvView?.OnFullscreenMouseMove();
-        }
+        OnFullscreenUserActivity();
     }
 
     protected override void OnKeyDown(KeyEventArgs e)
@@ -410,6 +525,21 @@ public partial class MainWindow : Window
 
         [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto)]
         public static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+
+        public delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto, SetLastError = true)]
+        public static extern IntPtr SetWindowsHookEx(int idHook, LowLevelMouseProc lpfn, IntPtr hMod, uint dwThreadId);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto, SetLastError = true)]
+        [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+        public static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+        public static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto, SetLastError = true)]
+        public static extern IntPtr GetModuleHandle(string lpModuleName);
 
         [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
         public struct RECT

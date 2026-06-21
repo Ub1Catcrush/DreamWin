@@ -34,7 +34,7 @@
         </Style>
     </Window.Resources>
 
-    <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+    <Border x:Name="OuterChromeBorder" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition x:Name="TitleBarRow" Height="44"/>  <!-- Title bar -->
