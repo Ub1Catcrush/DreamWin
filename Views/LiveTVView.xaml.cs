@@ -21,6 +21,13 @@ public partial class LiveTVView : UserControl
 
     public static LiveTVView? Instance { get; private set; }
 
+    /// <summary>
+    /// Raised once after LibVLC has been initialized (or immediately, if it already was,
+    /// for any subscriber that attaches late). Lets App.xaml.cs know precisely when the
+    /// splash screen can be dismissed, instead of guessing based on WPF Loaded-event timing.
+    /// </summary>
+    public static event Action? VlcReady;
+
     public LiveTVView()
     {
         InitializeComponent();
@@ -44,6 +51,7 @@ public partial class LiveTVView : UserControl
         _mediaPlayer.ESAdded += OnMediaPlayerEsAdded;
         _mediaPlayer.MediaChanged += OnMediaPlayerMediaChanged;
         Debug.WriteLine("[LiveTVView] LibVLC initialized");
+        VlcReady?.Invoke();
     }
 
     private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
@@ -92,11 +100,86 @@ public partial class LiveTVView : UserControl
     // Per-bouquet scroll positions: key = bouquet ServiceReference
     private readonly Dictionary<string, double> _bouquetScrollPositions = new();
 
+    // Fullscreen overlay auto-hide timer
+    private System.Windows.Threading.DispatcherTimer? _overlayTimer;
+
+    private void ShowFullscreenOverlays()
+    {
+        if (PlayerControlsOverlay != null)
+            PlayerControlsOverlay.Visibility = Visibility.Visible;
+        if (FullscreenEpgOverlay != null)
+            FullscreenEpgOverlay.Visibility = Visibility.Visible;
+        if (FullscreenChannelOverlay != null)
+            FullscreenChannelOverlay.Visibility = Visibility.Visible;
+
+        _overlayTimer?.Stop();
+        _overlayTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(3)
+        };
+        _overlayTimer.Tick += (_, _) =>
+        {
+            _overlayTimer?.Stop();
+            if (_vm?.IsFullscreen == true)
+                HideFullscreenOverlays();
+        };
+        _overlayTimer.Start();
+    }
+
+    private void HideFullscreenOverlays()
+    {
+        // In fullscreen, hide EPG and channel overlays (controls stay visible briefly)
+        if (FullscreenEpgOverlay != null)
+            FullscreenEpgOverlay.Visibility = Visibility.Collapsed;
+        if (FullscreenChannelOverlay != null)
+            FullscreenChannelOverlay.Visibility = Visibility.Collapsed;
+        // Controls overlay fades too, but only when NOT hovering over it
+        if (PlayerControlsOverlay != null && _vm?.IsFullscreen == true)
+            PlayerControlsOverlay.Visibility = Visibility.Collapsed;
+    }
+
+    private void EnterFullscreenOverlayMode()
+    {
+        // Fullscreen video should show nothing but the video itself plus the transient
+        // auto-hiding overlays — the permanent channel-list column is not part of that.
+        ChannelListColumn.Width = new GridLength(0);
+        ChannelListGutterColumn.Width = new GridLength(0);
+        if (ChannelListPanel != null) ChannelListPanel.Visibility = Visibility.Collapsed;
+
+        // Show overlays initially, then auto-hide
+        ShowFullscreenOverlays();
+    }
+
+    private void ExitFullscreenOverlayMode()
+    {
+        ChannelListColumn.Width = new GridLength(320);
+        ChannelListGutterColumn.Width = new GridLength(6);
+        if (ChannelListPanel != null) ChannelListPanel.Visibility = Visibility.Visible;
+
+        _overlayTimer?.Stop();
+        // Restore controls visibility (it's bound to IsPlaying normally)
+        if (PlayerControlsOverlay != null)
+            PlayerControlsOverlay.Visibility = Visibility.Visible;
+        if (FullscreenEpgOverlay != null)
+            FullscreenEpgOverlay.Visibility = Visibility.Collapsed;
+        if (FullscreenChannelOverlay != null)
+            FullscreenChannelOverlay.Visibility = Visibility.Collapsed;
+    }
+
     private void Vm_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (_vm == null) return;
 
         // Save scroll position when bouquet changes, restore for new bouquet
+        if (e.PropertyName == nameof(LiveTVViewModel.IsFullscreen))
+        {
+            if (_vm.IsFullscreen)
+                EnterFullscreenOverlayMode();
+            else
+                ExitFullscreenOverlayMode();
+            return;
+        }
+
         if (e.PropertyName == nameof(LiveTVViewModel.SelectedBouquet))
         {
             SaveChannelScrollPosition();
@@ -171,7 +254,11 @@ public partial class LiveTVView : UserControl
     {
         if (_mediaPlayer == null || _vm == null) return;
 
-        Dispatcher.InvokeAsync(RefreshAudioTracks);
+        Dispatcher.InvokeAsync(() =>
+        {
+            ChannelSwitchMask.Visibility = Visibility.Collapsed;
+            RefreshAudioTracks();
+        });
     }
 
             private void OnMediaPlayerEsAdded(object? sender, EventArgs e)
@@ -230,36 +317,73 @@ public partial class LiveTVView : UserControl
     {
         if (_libVlc == null || _mediaPlayer == null || string.IsNullOrEmpty(url)) return;
 
+        // Cover the native video surface before Stop()/Play() so the brief native-window
+        // flash in between is hidden. Removed once Playing fires (see OnMediaPlayerPlaying).
+        ChannelSwitchMask.Visibility = Visibility.Visible;
+
         try
         {
+            // Stop current playback cleanly to prevent white flash between streams
+            if (_mediaPlayer.IsPlaying || _mediaPlayer.State == VLCState.Paused)
+                _mediaPlayer.Stop();
+
             var media = new Media(_libVlc, new Uri(url));
+            // Add VLC options to reduce startup flash: disable video title and deinterlace
+            media.AddOption(":no-video-title-show");
+            media.AddOption(":network-caching=800");
             _mediaPlayer.Play(media);
+            media.Dispose(); // VLC retains its own reference
+
             if (_vm != null)
             {
                 _mediaPlayer.Volume = (int)_vm.Volume;
                 _mediaPlayer.Mute = _vm.IsMuted;
-                if (_vm.SelectedAudioTrack != null)
-                    _mediaPlayer.SetAudioTrack(_vm.SelectedAudioTrack.Id);
             }
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"[LiveTV] PlayStream error: {ex}");
+            // Playing won't fire if Play() itself failed — don't leave the mask stuck up.
+            ChannelSwitchMask.Visibility = Visibility.Collapsed;
         }
 
-        _ = Dispatcher.InvokeAsync(RefreshAudioTracks);
         _ = Task.Run(async () =>
         {
-            await Task.Delay(500);
+            await Task.Delay(800);
             _ = Dispatcher.InvokeAsync(RefreshAudioTracks);
             await Task.Delay(1500);
             _ = Dispatcher.InvokeAsync(RefreshAudioTracks);
+        });
+
+        // Safety net: if Playing never fires (e.g. the stream stalls or errors out after
+        // Play() returned successfully), don't leave the screen black indefinitely.
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(6000);
+            _ = Dispatcher.InvokeAsync(() => ChannelSwitchMask.Visibility = Visibility.Collapsed);
         });
     }
 
     public void Stop()
     {
         _mediaPlayer?.Stop();
+    }
+
+    private void VideoView_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        // Double-click: restart the current stream (handles hung/stalled streams)
+        if (_vm?.CurrentStreamUrl is { Length: > 0 } url)
+        {
+            Debug.WriteLine("[LiveTV] Double-click restart stream");
+            PlayStream(url);
+        }
+    }
+
+    // Called from MainWindow.OnMouseMove when in fullscreen — shows overlays temporarily
+    public void OnFullscreenMouseMove()
+    {
+        if (_vm?.IsFullscreen == true)
+            ShowFullscreenOverlays();
     }
 
     private void ChannelList_SelectionChanged(object sender, SelectionChangedEventArgs e)

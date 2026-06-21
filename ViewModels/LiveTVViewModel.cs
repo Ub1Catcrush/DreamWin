@@ -13,6 +13,7 @@ public partial class LiveTVViewModel : BaseViewModel
     [ObservableProperty] private ObservableCollection<Service> _bouquets = [];
     [ObservableProperty] private ObservableCollection<Service> _services = [];
     [ObservableProperty] private ObservableCollection<EpgEvent> _nowNextEvents = [];
+    [ObservableProperty] private ObservableCollection<NearbyChannelInfo> _nearbyNowNext = [];
     [ObservableProperty] private Service? _selectedBouquet;
     [ObservableProperty] private Service? _selectedService;
     [ObservableProperty] private EpgEvent? _currentEvent;
@@ -106,6 +107,9 @@ public partial class LiveTVViewModel : BaseViewModel
             NowNextEvents.Clear();
             foreach (var e in nowNext)
                 NowNextEvents.Add(e);
+
+            // Build nearby channel now/next for the fullscreen overlay
+            RefreshNearbyNowNext();
         }
         catch
         {
@@ -183,6 +187,32 @@ public partial class LiveTVViewModel : BaseViewModel
         return NowNextEvents.FirstOrDefault(e => e.ServiceRef == serviceRef && e.IsCurrentlyAiring);
     }
 
+    private void RefreshNearbyNowNext()
+    {
+        if (SelectedService == null || !Services.Any()) return;
+        var idx = Services.IndexOf(SelectedService);
+        if (idx < 0) return;
+
+        var nearby = new List<NearbyChannelInfo>();
+        for (int i = Math.Max(0, idx - 3); i < Math.Min(Services.Count, idx + 8); i++)
+        {
+            var svc = Services[i];
+            if (svc == SelectedService) continue; // current channel shown separately
+
+            var now = NowNextEvents.FirstOrDefault(e =>
+                e.ServiceRef == svc.ServiceReference && e.IsCurrentlyAiring);
+            if (now != null)
+                nearby.Add(new NearbyChannelInfo
+                {
+                    ServiceName = svc.ServiceName,
+                    NowTitle = now.Title,
+                    NowTime = now.TimeRange
+                });
+        }
+        NearbyNowNext.Clear();
+        foreach (var n in nearby) NearbyNowNext.Add(n);
+    }
+
     partial void OnSearchTextChanged(string value)
     {
         // Filter handled by converter in view
@@ -196,4 +226,12 @@ public class AudioTrackInfo
     public string Name { get; set; } = "";
 
     public override string ToString() => Name;
+}
+
+// A single row in the "nearby channels" now/next panel shown alongside the current channel.
+public class NearbyChannelInfo
+{
+    public string ServiceName { get; set; } = "";
+    public string NowTitle { get; set; } = "";
+    public string NowTime { get; set; } = "";
 }

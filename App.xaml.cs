@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 using DreamWin.Services;
@@ -18,6 +19,12 @@ public partial class App : Application
     {
         Debug.WriteLine($"[App] OnStartup begin, thread={Environment.CurrentManagedThreadId}");
         base.OnStartup(e);
+
+        // Show the splash immediately — before any service/native-library work — so the
+        // user sees something the instant the process starts, instead of a blank taskbar
+        // entry while LibVLC's native libraries load on first navigation to Live TV.
+        var splash = new SplashWindow();
+        splash.Show();
 
         // Surface any exception that would otherwise silently kill startup (e.g. inside
         // a Loaded handler) so it shows up in the Debug/Output window instead of leaving
@@ -41,6 +48,7 @@ public partial class App : Application
             args.SetObserved();
         };
 
+        splash.SetStatus("Loading settings…");
         SettingsService = new SettingsService();
         Enigma2 = new Enigma2Service();
         UpdateService = new UpdateService("1.0.0");
@@ -57,6 +65,37 @@ public partial class App : Application
         UpdateService.UpdateProgressChanged += (_, msg) => Debug.WriteLine($"[UpdateService] {msg}");
         UpdateService.UpdateError += (_, msg) => Debug.WriteLine($"[UpdateService] ERROR: {msg}");
         UpdateService.UpdateAvailable += (_, msg) => Debug.WriteLine($"[UpdateService] {msg}");
+
+        splash.SetStatus("Starting player engine…");
+
+        var mainWindow = new MainWindow();
+        MainWindow = mainWindow;
+
+        // Close the splash as soon as we know the first view is actually ready to show.
+        // Live TV is the default landing view, and its LibVLC init is the real "library
+        // loading" this splash exists for — VlcReady fires the instant that finishes.
+        // Loaded is kept as a fallback in case the default view is ever changed to
+        // something that doesn't touch LibVLC, and a timeout guards against the splash
+        // getting stuck open if something throws before either fires.
+        var splashClosed = false;
+        void CloseSplashOnce()
+        {
+            if (splashClosed) return;
+            splashClosed = true;
+            LiveTVView.VlcReady -= CloseSplashOnce;
+            splash.Close();
+            mainWindow.Activate();
+        }
+
+        LiveTVView.VlcReady += CloseSplashOnce;
+        mainWindow.Loaded += (_, _) => CloseSplashOnce();
+        _ = Dispatcher.InvokeAsync(async () =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(8));
+            CloseSplashOnce();
+        });
+
+        mainWindow.Show();
 
         Debug.WriteLine("[App] OnStartup end");
     }

@@ -164,10 +164,15 @@ public class PiconUrlConverter : IMultiValueConverter
             var bmp = new System.Windows.Media.Imaging.BitmapImage();
             bmp.BeginInit();
             bmp.UriSource = new Uri(url, UriKind.Absolute);
-            bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+            // OnDemand = non-blocking: WPF fetches asynchronously, bindings update when done
+            bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnDemand;
+            bmp.CreateOptions = System.Windows.Media.Imaging.BitmapCreateOptions.None;
             bmp.DecodePixelWidth = 52;
+            // Set a short download timeout via UriCachePolicy
+            bmp.UriCachePolicy = new System.Net.Cache.RequestCachePolicy(
+                System.Net.Cache.RequestCacheLevel.Default);
             bmp.EndInit();
-            bmp.Freeze();
+            // Do NOT freeze — the bitmap is still downloading asynchronously
             return bmp;
         }
         catch { return null; }

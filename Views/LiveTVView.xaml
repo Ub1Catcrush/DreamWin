@@ -3,15 +3,15 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vlc="clr-namespace:LibVLCSharp.WPF;assembly=LibVLCSharp.WPF"
              Background="{StaticResource BgDeep}">
-    <Grid>
+    <Grid x:Name="RootGrid">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="320" MinWidth="260"/>
-            <ColumnDefinition Width="6"/>
+            <ColumnDefinition x:Name="ChannelListColumn" Width="320" MinWidth="260"/>
+            <ColumnDefinition x:Name="ChannelListGutterColumn" Width="6"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
         <!-- ── Channel List Panel ──────────────────────────── -->
-        <Border Grid.Column="0" Background="{StaticResource BgPanel}"
+        <Border x:Name="ChannelListPanel" Grid.Column="0" Background="{StaticResource BgPanel}"
                 BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
             <Grid>
                 <Grid.RowDefinitions>
@@ -163,7 +163,9 @@
                      (placeholder, controls) must be placed INSIDE VideoView, not as siblings,
                      otherwise the native video window breaks WPF hit-testing/focus for the
                      whole window. -->
-                <vlc:VideoView x:Name="VideoView" Background="Black">
+                <vlc:VideoView x:Name="VideoView" Background="Black"
+                               RenderOptions.BitmapScalingMode="NearestNeighbor"
+                               MouseDoubleClick="VideoView_MouseDoubleClick">
                     <Grid>
                         <!-- No stream placeholder -->
                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -174,8 +176,15 @@
                                        FontSize="14" HorizontalAlignment="Center" Margin="0,12,0,0"/>
                         </StackPanel>
 
-                        <!-- Player Controls Overlay -->
-                        <Border VerticalAlignment="Bottom" Background="#C0000000"
+                        <!-- Channel-switch mask: the native VLC render surface briefly shows its
+                             default background (often white) between Stop() and the first decoded
+                             frame of the next stream — this is a known LibVLCSharp.WPF airspace
+                             limitation, not fixable via the VideoView's own Background property.
+                             Covering it with an opaque WPF layer hides that flash entirely. -->
+                        <Border x:Name="ChannelSwitchMask" Background="Black" Visibility="Collapsed"/>
+
+                        <!-- Player Controls Overlay: always visible when playing normal, auto-hides in fullscreen -->
+                        <Border x:Name="PlayerControlsOverlay" VerticalAlignment="Bottom" Background="#CC000000"
                                 Visibility="{Binding IsPlaying, Converter={StaticResource BoolToVisibility}}">
                             <Grid Margin="12,8">
                                 <Grid.ColumnDefinitions>
@@ -302,6 +311,128 @@
                                         </StackPanel>
                                     </Border>
                                 </StackPanel>
+                            </Grid>
+                        </Border>
+                        <!-- Fullscreen: right-side EPG overlay (now/next for nearby channels) -->
+                        <Border x:Name="FullscreenEpgOverlay"
+                                HorizontalAlignment="Right" VerticalAlignment="Top"
+                                Width="340" Background="#E0000000"
+                                Visibility="Collapsed"
+                                Margin="0,0,0,0">
+                            <StackPanel Margin="14,14,14,14">
+                                <TextBlock Text="NOW ON AIR" FontSize="10" FontWeight="Bold"
+                                           Foreground="{StaticResource Accent}" Margin="0,0,0,8"/>
+                                <!-- Current channel info -->
+                                <Border Background="#22FFFFFF" CornerRadius="6" Padding="10,8" Margin="0,0,0,6">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding SelectedService.ServiceName}"
+                                                   FontSize="13" FontWeight="Bold"
+                                                   Foreground="{StaticResource TextPrimary}"/>
+                                        <TextBlock Text="{Binding CurrentEvent.Title}"
+                                                   FontSize="12" Foreground="{StaticResource Accent}"
+                                                   Margin="0,2,0,0"/>
+                                        <TextBlock Text="{Binding CurrentEvent.TimeRange}"
+                                                   FontSize="10" Foreground="{StaticResource TextMuted}"
+                                                   Margin="0,2,0,0"/>
+                                        <TextBlock Text="{Binding NextEvent.Title, StringFormat='Next: {0}'}"
+                                                   FontSize="10" Foreground="{StaticResource TextSecondary}"
+                                                   Margin="0,4,0,0"
+                                                   Visibility="{Binding NextEvent, Converter={StaticResource NullToVisibility}}"/>
+                                    </StackPanel>
+                                </Border>
+                                <!-- Nearby channels now/next -->
+                                <ItemsControl ItemsSource="{Binding NearbyNowNext}"
+                                              MaxHeight="400">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Padding="8,6" Margin="0,2" CornerRadius="4"
+                                                    Background="#15FFFFFF">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="100"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0"
+                                                               Text="{Binding ServiceName}"
+                                                               FontSize="10" Foreground="{StaticResource TextMuted}"
+                                                               VerticalAlignment="Center"
+                                                               TextTrimming="CharacterEllipsis"/>
+                                                    <StackPanel Grid.Column="1">
+                                                        <TextBlock Text="{Binding NowTitle}"
+                                                                   FontSize="11" Foreground="{StaticResource TextPrimary}"
+                                                                   TextTrimming="CharacterEllipsis"/>
+                                                        <TextBlock Text="{Binding NowTime}"
+                                                                   FontSize="9" Foreground="{StaticResource TextMuted}"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Fullscreen: left-side channel list overlay -->
+                        <Border x:Name="FullscreenChannelOverlay"
+                                HorizontalAlignment="Left" VerticalAlignment="Stretch"
+                                Width="240" Background="#E0000000"
+                                Visibility="Collapsed">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <Border Grid.Row="0" Padding="12,10" Background="#20FFFFFF">
+                                    <TextBlock Text="CHANNELS" FontSize="10" FontWeight="Bold"
+                                               Foreground="{StaticResource Accent}"/>
+                                </Border>
+                                <ListBox Grid.Row="1"
+                                         ItemsSource="{Binding Services}"
+                                         SelectedItem="{Binding SelectedService}"
+                                         Background="Transparent" BorderThickness="0"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="2,3">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="30"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Image Grid.Column="0" Width="26" Height="26" Stretch="Uniform"
+                                                       RenderOptions.BitmapScalingMode="HighQuality">
+                                                    <Image.Source>
+                                                        <MultiBinding Converter="{StaticResource PiconUrl}"
+                                                                      TargetNullValue="{x:Null}" FallbackValue="{x:Null}">
+                                                            <Binding Path="ServiceReference"/>
+                                                            <Binding Path="DataContext.ActiveReceiver"
+                                                                     RelativeSource="{RelativeSource AncestorType=Window}"/>
+                                                        </MultiBinding>
+                                                    </Image.Source>
+                                                </Image>
+                                                <TextBlock Grid.Column="1" Margin="6,0,0,0"
+                                                           Text="{Binding ServiceName}"
+                                                           FontSize="12" Foreground="{StaticResource TextPrimary}"
+                                                           VerticalAlignment="Center"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem">
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+                                            <Setter Property="Padding" Value="6,2"/>
+                                            <Style.Triggers>
+                                                <Trigger Property="IsSelected" Value="True">
+                                                    <Setter Property="Background" Value="{StaticResource Accent}"/>
+                                                </Trigger>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Background" Value="{StaticResource BgHover}"/>
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                </ListBox>
                             </Grid>
                         </Border>
                     </Grid>

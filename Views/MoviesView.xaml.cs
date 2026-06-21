@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Runtime.Versioning;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using LibVLCSharp.Shared;
 using DreamWin.ViewModels;
 
@@ -156,12 +157,40 @@ public partial class MoviesView : UserControl
             case nameof(MoviesViewModel.Volume):
                 _mediaPlayer.Volume = (int)_vm.Volume;
                 break;
-            case nameof(MoviesViewModel.PositionPercent) when !_seekingFromCode:
-                _mediaPlayer.Position = (float)(_vm.PositionPercent / 100.0);
-                break;
+            // PositionPercent changes from code are NOT applied back to player here
+            // — seeking only happens via PositionSlider_DragCompleted to avoid feedback loops
             case nameof(MoviesViewModel.SelectedAudioTrack) when _vm.SelectedAudioTrack != null:
                 _mediaPlayer.SetAudioTrack(_vm.SelectedAudioTrack.Id);
                 break;
         }
+    }
+    private void MovieVideoView_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (_vm?.CurrentStreamUrl is { Length: > 0 } url)
+        {
+            Debug.WriteLine("[MoviesView] Double-click restart stream");
+            PlayStream(url);
+        }
+    }
+
+    private bool _isDraggingSlider;
+
+    private void PositionSlider_DragStarted(object sender, DragStartedEventArgs e)
+    {
+        _isDraggingSlider = true;
+    }
+
+    private void PositionSlider_DragCompleted(object sender, DragCompletedEventArgs e)
+    {
+        _isDraggingSlider = false;
+        if (_mediaPlayer == null || PositionSlider == null) return;
+        _mediaPlayer.Position = (float)(PositionSlider.Value / 100.0);
+    }
+
+    private void PositionSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        // Only seek when user is actively dragging (not during programmatic updates)
+        if (!_isDraggingSlider || _mediaPlayer == null) return;
+        _mediaPlayer.Position = (float)(e.NewValue / 100.0);
     }
 }

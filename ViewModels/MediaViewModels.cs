@@ -52,7 +52,11 @@ public partial class EpgViewModel : BaseViewModel
     // Grid view
     [ObservableProperty] private bool _isGridView;
     [ObservableProperty] private ObservableCollection<EpgGridRow> _gridRows = [];
-    [ObservableProperty] private DateTime _gridStart = DateTime.Now.Date.AddHours(DateTime.Now.Hour);
+    [ObservableProperty] private DateTime _gridStart = SnapToSlot(DateTime.Now);
+
+    // Snap to the nearest 30-minute boundary at or before the given time
+    private static DateTime SnapToSlot(DateTime t)
+        => t.Date.AddHours(t.Hour).AddMinutes(t.Minute >= 30 ? 30 : 0);
     [ObservableProperty] private int _gridHours = 3;
 
     // Time slot labels: one per 30 min slot along Y axis
@@ -204,7 +208,10 @@ public partial class EpgViewModel : BaseViewModel
     [RelayCommand]
     private async Task GridStepBackAsync()
     {
-        GridStart = GridStart.AddHours(-GridHours);
+        var newStart = GridStart.AddHours(-GridHours);
+        // Don't go more than 7 days in the past
+        if (newStart < DateTime.Now.AddDays(-7)) return;
+        GridStart = newStart;
         if (SelectedBouquet != null) await LoadGridAsync();
     }
 
@@ -218,7 +225,7 @@ public partial class EpgViewModel : BaseViewModel
     [RelayCommand]
     private async Task GridNowAsync()
     {
-        GridStart = DateTime.Now.Date.AddHours(DateTime.Now.Hour);
+        GridStart = SnapToSlot(DateTime.Now);
         if (SelectedBouquet != null) await LoadGridAsync();
     }
 
@@ -239,9 +246,13 @@ public partial class EpgViewModel : BaseViewModel
                 var evts = grouped.TryGetValue(svc.ServiceReference, out var list) ? list : [];
                 foreach (var e in evts)
                 {
-                    // Y = time axis: 1.8px per minute
-                    e.OffsetPx = Math.Max(0, (e.BeginTime - GridStart).TotalMinutes * EpgViewModel.PxPerMinute);
-                    e.HeightPx = Math.Max(4, e.DurationSec / 60.0 * EpgViewModel.PxPerMinute - 2);
+                    // Y = time: 1.8px/min. Events that started before GridStart get negative offset
+                    // → clamp to 0 but reduce height so the block ends at the correct time.
+                    var startMinutes = (e.BeginTime - GridStart).TotalMinutes;
+                    var endMinutes   = startMinutes + e.DurationSec / 60.0;
+                    var clampedStart = Math.Max(0, startMinutes);
+                    e.OffsetPx = clampedStart * EpgViewModel.PxPerMinute;
+                    e.HeightPx = Math.Max(4, (endMinutes - clampedStart) * EpgViewModel.PxPerMinute - 2);
                 }
 
                 var row = new EpgGridRow { Service = svc, GridStart = GridStart, Events = evts };

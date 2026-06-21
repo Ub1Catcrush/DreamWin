@@ -133,7 +133,8 @@
 
             <!-- Video -->
             <Border Grid.Row="0" Background="Black">
-                <vlc:VideoView x:Name="MovieVideoView" Background="Black">
+                <vlc:VideoView x:Name="MovieVideoView" Background="Black"
+                               MouseDoubleClick="MovieVideoView_MouseDoubleClick">
                     <Grid>
                         <!-- Placeholder / select prompt -->
                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -228,9 +229,13 @@
 
                     <!-- Position / time -->
                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0">
-                        <Slider Minimum="0" Maximum="100" VerticalAlignment="Center"
-                                Value="{Binding PositionPercent, Mode=TwoWay}"
-                                x:Name="PositionSlider"/>
+                        <Slider x:Name="PositionSlider"
+                                Minimum="0" Maximum="100" VerticalAlignment="Center"
+                                Value="{Binding PositionPercent, Mode=OneWay}"
+                                IsMoveToPointEnabled="True"
+                                Thumb.DragStarted="PositionSlider_DragStarted"
+                                Thumb.DragCompleted="PositionSlider_DragCompleted"
+                                ValueChanged="PositionSlider_ValueChanged"/>
                         <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
                             <TextBlock Text="{Binding PositionText}" FontSize="10"
                                        Foreground="{StaticResource TextSecondary}"/>

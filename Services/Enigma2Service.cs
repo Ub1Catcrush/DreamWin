@@ -271,11 +271,19 @@ public class Enigma2Service : IDisposable
     public async Task<List<EpgEvent>> GetEpgForServiceAsync(string serviceRef, int hours = 24)
     {
         var now = DateTimeOffset.Now;
+        return await GetEpgForServiceRangeAsync(serviceRef, now.DateTime, hours);
+    }
+
+    public async Task<List<EpgEvent>> GetEpgForServiceRangeAsync(string serviceRef, DateTime start, int hours = 3)
+    {
+        // Fetch from start-1h to start+hours to catch programs that began before our window
+        var begin = new DateTimeOffset(start.AddHours(-1)).ToUnixTimeSeconds();
+        var end = new DateTimeOffset(start.AddHours(hours)).ToUnixTimeSeconds();
         var events = await GetEpgEventsAsync("epgservice", new()
         {
             ["sRef"] = serviceRef,
-            ["begin"] = now.ToUnixTimeSeconds().ToString(),
-            ["end"] = now.AddHours(hours).ToUnixTimeSeconds().ToString()
+            ["begin"] = begin.ToString(),
+            ["end"] = end.ToString()
         });
 
         if (events.Count == 0)
@@ -309,7 +317,8 @@ public class Enigma2Service : IDisposable
     /// <summary>Fetches a time window of EPG for all services in a bouquet (for grid view).</summary>
     public async Task<List<EpgEvent>> GetEpgBouquetTimeWindowAsync(string bouquetRef, DateTime start, int hours = 3)
     {
-        var begin = new DateTimeOffset(start).ToUnixTimeSeconds();
+        // Fetch 1h before window start to include programs already in progress
+        var begin = new DateTimeOffset(start.AddHours(-1)).ToUnixTimeSeconds();
         var end = new DateTimeOffset(start.AddHours(hours)).ToUnixTimeSeconds();
         var events = await GetEpgEventsAsync("epgbouquet", new()
         {
@@ -317,20 +326,23 @@ public class Enigma2Service : IDisposable
             ["begin"] = begin.ToString(),
             ["end"] = end.ToString()
         });
+        Debug.WriteLine($"[Enigma2Service] epgbouquet returned {events.Count} events for {bouquetRef}");
 
-        // Fallback: receiver doesn't support bRef time-window — fetch now+next per service in parallel
+        // Fallback: receiver doesn't support bRef time-window — fetch per service in parallel
         if (events.Count == 0)
         {
             var services = await GetServicesAsync(bouquetRef);
-            var semaphore = new SemaphoreSlim(4); // max 4 concurrent requests
+            Debug.WriteLine($"[Enigma2Service] epgbouquet fallback: fetching {services.Count} services in parallel");
+            var semaphore = new SemaphoreSlim(4);
             var tasks = services.Take(50).Select(async svc =>
             {
                 await semaphore.WaitAsync();
-                try { return await GetEpgForServiceAsync(svc.ServiceReference, hours); }
+                try { return await GetEpgForServiceRangeAsync(svc.ServiceReference, start, hours); }
                 finally { semaphore.Release(); }
             });
             var results = await Task.WhenAll(tasks);
             events = results.SelectMany(r => r).ToList();
+            Debug.WriteLine($"[Enigma2Service] epgbouquet fallback got {events.Count} total events");
         }
 
         return events;
@@ -562,35 +574,50 @@ public class Enigma2Service : IDisposable
         try
         {
             var raw = await GetRawResponseAsync("autotimer");
+            Debug.WriteLine($"[Enigma2Service] AutoTimer raw response (first 500): {(raw.Length > 500 ? raw[..500] : raw)}");
+
             var token = Newtonsoft.Json.Linq.JToken.Parse(raw);
             var list = new List<AutoTimer>();
-            // Enigma2 AutoTimer plugin returns { "autotimers": { "autotimer": [...] } }
-            // or { "autotimers": [...] }
-            Newtonsoft.Json.Linq.JToken? arr = null;
-            if (token["autotimers"]?["autotimer"] is { } nested)
-                arr = nested;
-            else if (token["autotimers"] is { } top && top.Type == Newtonsoft.Json.Linq.JTokenType.Array)
-                arr = top;
-            else if (token["autotimers"] is { } obj2 && obj2.Type == Newtonsoft.Json.Linq.JTokenType.Object)
-                arr = obj2["autotimer"];
+            var js = JsonSerializer.Create(_jsonSettings);
 
-            if (arr != null)
+            // Navigate to the timer array regardless of nesting depth
+            // Shape A: { "autotimers": { "autotimer": [...] } }
+            // Shape B: { "autotimers": { "autotimer": {...} } }  (single item as object)
+            // Shape C: { "autotimers": [...] }
+            // Shape D: { "autotimer": [...] }  (root level)
+            Newtonsoft.Json.Linq.JToken? arr =
+                token["autotimers"]?["autotimer"]   // Shape A/B
+                ?? token["autotimers"]              // Shape C
+                ?? token["autotimer"];              // Shape D
+
+            Debug.WriteLine($"[Enigma2Service] AutoTimer arr type: {arr?.Type}");
+
+            if (arr == null)
             {
-                if (arr.Type == Newtonsoft.Json.Linq.JTokenType.Array)
+                Debug.WriteLine("[Enigma2Service] GetAutoTimersAsync: no recognisable autotimer key in response");
+                return [];
+            }
+
+            if (arr.Type == Newtonsoft.Json.Linq.JTokenType.Array)
+            {
+                foreach (var item in arr)
                 {
-                    foreach (var item in arr)
-                        list.Add(item.ToObject<AutoTimer>(JsonSerializer.Create(_jsonSettings)) ?? new AutoTimer());
-                }
-                else if (arr.Type == Newtonsoft.Json.Linq.JTokenType.Object)
-                {
-                    list.Add(arr.ToObject<AutoTimer>(JsonSerializer.Create(_jsonSettings)) ?? new AutoTimer());
+                    var at = item.ToObject<AutoTimer>(js);
+                    if (at != null) list.Add(at);
                 }
             }
+            else if (arr.Type == Newtonsoft.Json.Linq.JTokenType.Object)
+            {
+                var at = arr.ToObject<AutoTimer>(js);
+                if (at != null) list.Add(at);
+            }
+
+            Debug.WriteLine($"[Enigma2Service] GetAutoTimersAsync: parsed {list.Count} AutoTimers");
             return list;
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[Enigma2Service] GetAutoTimersAsync error: {ex.Message}");
+            Debug.WriteLine($"[Enigma2Service] GetAutoTimersAsync error: {ex}");
             return [];
         }
     }
