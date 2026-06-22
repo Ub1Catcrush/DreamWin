@@ -87,17 +87,24 @@
                         </ItemsControl>
                     </ScrollViewer>
 
-                    <!-- List mode: channel picker -->
-                    <ComboBox Width="240" Margin="8,0,0,0" Style="{StaticResource DarkComboBox}"
-                              ItemsSource="{Binding Services}" SelectedItem="{Binding SelectedService}"
-                              DisplayMemberPath="ServiceName"
-                              Visibility="{Binding IsGridView, Converter={StaticResource BoolToVisibilityInverted}}"/>
+                    <!-- List mode: channel picker + day navigation -->
+                    <StackPanel Orientation="Horizontal" Margin="8,0,0,0"
+                                Visibility="{Binding IsGridView, Converter={StaticResource BoolToVisibilityInverted}}">
+                        <ComboBox Width="200" Margin="0,0,8,0" Style="{StaticResource DarkComboBox}"
+                                  ItemsSource="{Binding Services}" SelectedItem="{Binding SelectedService}"
+                                  DisplayMemberPath="ServiceName"/>
+                        <Button Style="{StaticResource AccentButton}" Padding="10,5" Margin="0,0,4,0"
+                                Content="Today" Command="{Binding ListDayTodayCommand}"/>
+                        <Button Style="{StaticResource BaseButton}" Padding="10,5" Margin="0,0,8,0"
+                                Content="Tomorrow ▶" Command="{Binding ListDayForwardCommand}"/>
+                        <TextBlock VerticalAlignment="Center" FontSize="12" FontWeight="Medium"
+                                   Foreground="{StaticResource TextSecondary}"
+                                   Text="{Binding ListDay, StringFormat='{}{0:dddd\, dd. MMMM yyyy}'}"/>
+                    </StackPanel>
 
-                    <!-- Grid mode: prev/next day -->
+                    <!-- Grid mode: today/next day (no backward navigation — EPG is now/future only) -->
                     <StackPanel Orientation="Horizontal" Margin="8,0,0,0"
                                 Visibility="{Binding IsGridView, Converter={StaticResource BoolToVisibility}}">
-                        <Button Style="{StaticResource BaseButton}" Padding="10,5" Margin="0,0,4,0"
-                                Content="◀ Yesterday" Command="{Binding GridStepBackCommand}"/>
                         <Button Style="{StaticResource AccentButton}" Padding="10,5" Margin="0,0,4,0"
                                 Content="Today" Command="{Binding GridNowCommand}"/>
                         <Button Style="{StaticResource BaseButton}" Padding="10,5" Margin="0,0,8,0"
@@ -111,86 +118,95 @@
         </Border>
 
         <!-- ── LIST VIEW ── -->
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
-                      Visibility="{Binding IsGridView, Converter={StaticResource BoolToVisibilityInverted}}">
-            <StackPanel>
-                <Border Margin="12,12,12,0" Padding="12,8" CornerRadius="6"
-                        Background="#332E3A" BorderBrush="{StaticResource AccentRed}" BorderThickness="1"
-                        Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource AccentRed}"
-                                   FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center"/>
-                        <Button Style="{StaticResource BaseButton}" Padding="8,4" Margin="8,0,0,0"
-                                Content="↺ Retry" Command="{Binding RetryCommand}"/>
-                    </StackPanel>
-                </Border>
-                <ItemsControl ItemsSource="{Binding Events}" Padding="12">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Border Margin="0,0,0,6" CornerRadius="8"
-                                    Background="{StaticResource BgCard}"
-                                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
-                                <Border.Style>
-                                    <Style TargetType="Border">
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsCurrentlyAiring}" Value="True">
-                                                <Setter Property="BorderBrush" Value="{StaticResource Accent}"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Border.Style>
-                                <Grid Margin="14,10">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="90"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding TimeRange}" FontSize="12" FontWeight="Medium"
-                                                   Foreground="{StaticResource Accent}"/>
-                                        <TextBlock Text="{Binding Duration}" FontSize="10"
-                                                   Foreground="{StaticResource TextMuted}"/>
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1" Margin="12,0">
-                                        <StackPanel Orientation="Horizontal">
-                                            <Border CornerRadius="3" Padding="5,2" Margin="0,0,8,0"
-                                                    Visibility="{Binding IsCurrentlyAiring,
-                                                                 Converter={StaticResource BoolToVisibility}}">
-                                                <Border.Background>
-                                                    <SolidColorBrush Color="#EF4444" Opacity="0.2"/>
-                                                </Border.Background>
-                                                <TextBlock Text="LIVE" FontSize="9" FontWeight="Bold"
-                                                           Foreground="{StaticResource AccentRed}"/>
-                                            </Border>
-                                            <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold"
-                                                       Foreground="{StaticResource TextPrimary}"/>
+        <Grid Grid.Row="1" Visibility="{Binding IsGridView, Converter={StaticResource BoolToVisibilityInverted}}">
+            <!-- Loading overlay — prevents stale/previous-day events from being
+                 visible while the new day's data is being fetched -->
+            <Border Background="#CC000000" Panel.ZIndex="10"
+                    Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}">
+                <TextBlock Text="{Binding StatusMessage}" Foreground="White" FontSize="14"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <Border Margin="12,12,12,0" Padding="12,8" CornerRadius="6"
+                            Background="#332E3A" BorderBrush="{StaticResource AccentRed}" BorderThickness="1"
+                            Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource AccentRed}"
+                                       FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                            <Button Style="{StaticResource BaseButton}" Padding="8,4" Margin="8,0,0,0"
+                                    Content="↺ Retry" Command="{Binding RetryCommand}"/>
+                        </StackPanel>
+                    </Border>
+                    <ItemsControl ItemsSource="{Binding Events}" Padding="12">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Margin="0,0,0,6" CornerRadius="8"
+                                        Background="{StaticResource BgCard}"
+                                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsCurrentlyAiring}" Value="True">
+                                                    <Setter Property="BorderBrush" Value="{StaticResource Accent}"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <Grid Margin="14,10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="90"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding TimeRange}" FontSize="12" FontWeight="Medium"
+                                                       Foreground="{StaticResource Accent}"/>
+                                            <TextBlock Text="{Binding Duration}" FontSize="10"
+                                                       Foreground="{StaticResource TextMuted}"/>
                                         </StackPanel>
-                                        <TextBlock Text="{Binding ShortDesc}" FontSize="11"
-                                                   Foreground="{StaticResource TextMuted}"
-                                                   TextTrimming="CharacterEllipsis" Margin="0,3,0,0"/>
-                                    </StackPanel>
-                                    <Button Grid.Column="2" Style="{StaticResource AccentButton}"
-                                            Content="+ Timer" Padding="10,6" FontSize="11"
-                                            VerticalAlignment="Center"
-                                            Command="{Binding DataContext.RequestAddTimerCommand,
-                                                      RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                            CommandParameter="{Binding}"/>
-                                </Grid>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </StackPanel>
-        </ScrollViewer>
+                                        <StackPanel Grid.Column="1" Margin="12,0">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Border CornerRadius="3" Padding="5,2" Margin="0,0,8,0"
+                                                        Visibility="{Binding IsCurrentlyAiring,
+                                                                     Converter={StaticResource BoolToVisibility}}">
+                                                    <Border.Background>
+                                                        <SolidColorBrush Color="#EF4444" Opacity="0.2"/>
+                                                    </Border.Background>
+                                                    <TextBlock Text="LIVE" FontSize="9" FontWeight="Bold"
+                                                               Foreground="{StaticResource AccentRed}"/>
+                                                </Border>
+                                                <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold"
+                                                           Foreground="{StaticResource TextPrimary}"/>
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding ShortDesc}" FontSize="11"
+                                                       Foreground="{StaticResource TextMuted}"
+                                                       TextTrimming="CharacterEllipsis" Margin="0,3,0,0"/>
+                                        </StackPanel>
+                                        <Button Grid.Column="2" Style="{StaticResource AccentButton}"
+                                                Content="+ Timer" Padding="10,6" FontSize="11"
+                                                VerticalAlignment="Center"
+                                                Command="{Binding DataContext.RequestAddTimerCommand,
+                                                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}"/>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
 
-        <!-- Empty list state -->
+        <!-- Empty list state: only shown when not loading AND no events present,
+             so it never flashes "Select a channel" while EPG data is being fetched -->
         <StackPanel Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center"
                     Visibility="{Binding IsGridView, Converter={StaticResource BoolToVisibilityInverted}}">
             <StackPanel.Style>
                 <Style TargetType="StackPanel">
                     <Setter Property="Visibility" Value="Collapsed"/>
                     <Style.Triggers>
-                        <DataTrigger Binding="{Binding Events.Count}" Value="0">
+                        <DataTrigger Binding="{Binding HasListEvents}" Value="False">
                             <Setter Property="Visibility" Value="Visible"/>
                         </DataTrigger>
                     </Style.Triggers>

@@ -141,6 +141,7 @@ public class Enigma2Service : IDisposable
 
         _config = config;
         _lastConfigId = config.Id;
+        InvalidateServiceListCache();
     }
 
     public void Dispose()
@@ -390,18 +391,46 @@ public class Enigma2Service : IDisposable
     }
 
     // ─── Services / Bouquets ───────────────────────────────────────────
+    // Bouquets and services lists are static for the lifetime of a receiver connection —
+    // the user isn't changing their channel configuration while watching TV. Caching them
+    // session-wide eliminates the repeated getservices calls visible in the logs (once per
+    // EPG open, once per prewarm, once per SelectBouquetAsync, etc.).
+    // Both caches are invalidated together on SetReceiver() so a reconnect to a different
+    // (or reconfigured) receiver always gets a fresh load.
+    private List<Service>? _cachedBouquets;
+    private readonly Dictionary<string, List<Service>> _cachedServices = new();
+
     public async Task<List<Service>> GetBouquetsAsync()
     {
+        if (_cachedBouquets != null)
+        {
+            Debug.WriteLine($"[Enigma2Service] GetBouquetsAsync cache hit ({_cachedBouquets.Count} bouquets)");
+            return _cachedBouquets;
+        }
         var bouquets = await GetListAsync<Service>("getservices", null, "services", "service");
         Debug.WriteLine($"[Enigma2Service] GetBouquetsAsync returned {bouquets.Count} bouquets");
+        _cachedBouquets = bouquets;
         return bouquets;
     }
 
     public async Task<List<Service>> GetServicesAsync(string bouquetRef)
     {
+        if (_cachedServices.TryGetValue(bouquetRef, out var cached))
+        {
+            Debug.WriteLine($"[Enigma2Service] GetServicesAsync cache hit for {bouquetRef} ({cached.Count} services)");
+            return cached;
+        }
         var services = await GetListAsync<Service>("getservices", new() { ["sRef"] = bouquetRef }, "services", "service");
         Debug.WriteLine($"[Enigma2Service] GetServicesAsync({bouquetRef}) returned {services.Count} services");
+        _cachedServices[bouquetRef] = services;
         return services;
+    }
+
+    public void InvalidateServiceListCache()
+    {
+        _cachedBouquets = null;
+        _cachedServices.Clear();
+        Debug.WriteLine("[Enigma2Service] Service list cache invalidated");
     }
 
     // ─── EPG ─────────────────────────────────────────────────────────
@@ -427,10 +456,25 @@ public class Enigma2Service : IDisposable
         // NOTE: OpenWebif's epgservice handler (P_epgservice) reads its time-window
         // query parameters as "time" and "endTime" — NOT "begin"/"end" (those are the
         // parameter names for the unrelated timer endpoints like timeradd/timerdelete).
-        // Sending "begin"/"end" here meant the server never recognized them, silently
-        // defaulted both to -1 internally, and fell back to its own default behavior of
-        // "every event from now onward" — which is exactly why past events never
-        // appeared in the EPG grid regardless of what window we asked for client-side.
+        //
+        // CONFIRMED (via the actual model source, controllers/models/services.py):
+        // P_epgservice calls getChannelEpg(sRef, begintime, endtime), which calls
+        // Enigma2's native eEPGCache.lookupEvent(['IBDTSENCW', (ref, 0, begintime,
+        // endtime)]) — query type 0 takes two ABSOLUTE Unix timestamps as a literal
+        // [begin, end) range. So "endTime" here genuinely IS an absolute end-of-window
+        // timestamp, unlike epgmulti/epgbouquet's getBouquetEpg (see
+        // TryGetEpgMultiAsync), which is a DIFFERENT model function under the hood with
+        // a different parameter convention for the same-named query argument. Do not
+        // "fix" this to send a duration — that was tried and is wrong; this absolute-
+        // timestamp form is correct for epgservice specifically.
+        //
+        // The zero-events-despite-data-existing symptom seen in practice is a separate,
+        // real quirk of this endpoint/receiver combination (independently reported by
+        // other OpenWebif users with this exact begin/end timestamp shape) and is NOT
+        // fixed by changing the parameter semantics here. It's mitigated structurally
+        // instead: GetEpgBouquetTimeWindowAsync and the grid/list view caches now both
+        // prefer the bouquet-wide epgmulti result and only fall back to this endpoint
+        // when epgmulti itself is unavailable, so this flaky path is exercised rarely.
         var events = await GetEpgEventsAsync("epgservice", new()
         {
             ["sRef"] = serviceRef,
@@ -490,12 +534,16 @@ public class Enigma2Service : IDisposable
             : start;                   // other days: exact midnight
 
         // "epgmulti" returns EPG for every service in a bouquet in a SINGLE request
-        // (unlike "epgbouquet" above, it does honor begin/end server-side) — this
-        // replaces what used to be one HTTP round-trip per channel with exactly one
-        // round-trip for the whole bouquet, which is both faster and far gentler on
-        // receivers that can't tolerate many requests in a session. Not every
-        // OpenWebif build exposes it, so we fall back to the per-channel path on
-        // failure or on a suspiciously-empty result.
+        // (unlike "epgbouquet" above, which only ever returns the single now-playing
+        // event regardless of params) — this replaces what used to be one HTTP
+        // round-trip per channel with exactly one round-trip for the whole bouquet,
+        // which is both faster and far gentler on receivers that can't tolerate many
+        // requests in a session. "time" sets the window start and "endTime" sets the
+        // window's DURATION IN SECONDS from there (not an end timestamp — see
+        // TryGetEpgMultiAsync), so the requested window is genuinely server-side
+        // bounded here, unlike epgbouquet. Not every OpenWebif build exposes epgmulti,
+        // so we fall back to the per-channel path on failure or on a suspiciously-
+        // empty result.
         var multiEvents = await TryGetEpgMultiAsync(bouquetRef, windowStart, hours);
         if (multiEvents != null)
         {
@@ -535,18 +583,27 @@ public class Enigma2Service : IDisposable
     /// epgmulti, fall back" from "epgmulti worked and the bouquet genuinely has no
     /// events right now" — and, per the no-error-caching rule, so a transient failure
     /// here is never mistaken by a caller for a real (cacheable) empty result.
+    ///
+    /// "bRef" is the only mandatory parameter. Both "time" and "endTime" are optional
+    /// but, IMPORTANT, do not have the shape you'd guess from "epgservice"'s
+    /// parameters of the same name:
+    ///   - time: starting Unix timestamp (seconds since 1970) — same meaning as
+    ///     elsewhere.
+    ///   - endTime: NOT an end-of-window timestamp. It's a DURATION IN SECONDS (e.g.
+    ///     7200 = 2 hours) measured from "time". Passing an absolute Unix timestamp
+    ///     here (as if it meant "end at this moment") would ask for a window lasting
+    ///     decades, not hours — silently fetching/returning vastly more data than
+    ///     intended.
     /// </summary>
     private async Task<List<EpgEvent>?> TryGetEpgMultiAsync(string bouquetRef, DateTime start, int hours)
     {
-        var begin = new DateTimeOffset(start).ToUnixTimeSeconds();
-        var end = new DateTimeOffset(start.AddHours(hours)).ToUnixTimeSeconds();
         try
         {
             var events = await GetEpgEventsAsync("epgmulti", new()
             {
                 ["bRef"] = bouquetRef,
-                ["time"] = begin.ToString(),
-                ["endTime"] = end.ToString()
+                ["time"] = new DateTimeOffset(start).ToUnixTimeSeconds().ToString(),
+                ["endTime"] = (hours * 3600).ToString()
             });
             return events.Count > 0 ? events : null;
         }
