@@ -41,11 +41,11 @@ jobs:
 
       # Build Debug Configuration
       - name: Build Debug
-        run: dotnet publish -c Debug -r win-x64 --self-contained false /p:Version=${{ env.VERSION_NAME }} -o ./build/debug
+        run: dotnet publish DreamWin.csproj -c Debug -r win-x64 --self-contained false /p:Version=${{ env.VERSION_NAME }} -o ./build/debug
 
       # Build Release Configuration (Injects version into the output EXE metadata)
       - name: Build Release
-        run: dotnet publish -c Release -r win-x64 --self-contained false /p:Version=${{ env.VERSION_NAME }} -o ./build/release
+        run: dotnet publish DreamWin.csproj -c Release -r win-x64 --self-contained false /p:Version=${{ env.VERSION_NAME }} -o ./build/release
 
       # Create Installer using Inno Setup (Passes version to installer script)
       - name: Compile Installer with Inno Setup
