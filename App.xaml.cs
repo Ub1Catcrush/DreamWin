@@ -51,11 +51,23 @@ public partial class App : Application
         splash.SetStatus("Loading settings…");
         SettingsService = new SettingsService();
         Enigma2 = new Enigma2Service();
-        // Read version from the compiled assembly — keeps it in sync with csproj <Version>
-        var asmVersion = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-        var appVersion = asmVersion != null
-            ? $"{asmVersion.Major}.{asmVersion.Minor}.{asmVersion.Build}"
-            : "1.0.0";
+        // Read version from FileVersionInfo — this reflects <Version> in DreamWin.csproj
+        // and is always accurate regardless of GenerateAssemblyInfo setting.
+        // Assembly.GetName().Version returns 0.0.0.0 when GenerateAssemblyInfo=false
+        // unless [assembly: AssemblyVersion(...)] is explicitly declared.
+        string appVersion;
+        try
+        {
+            var fvi = System.Diagnostics.FileVersionInfo.GetVersionInfo(
+                System.Reflection.Assembly.GetExecutingAssembly().Location);
+            var v = fvi.ProductVersion ?? fvi.FileVersion ?? "1.0.0";
+            // Strip any commit suffix (e.g. "1.2.3+abc1234" → "1.2.3")
+            appVersion = v.Contains('+') ? v[..v.IndexOf('+')] : v;
+        }
+        catch
+        {
+            appVersion = "1.0.0";
+        }
         UpdateService = new UpdateService(appVersion);
         MainVM = new MainViewModel(SettingsService, Enigma2);
 

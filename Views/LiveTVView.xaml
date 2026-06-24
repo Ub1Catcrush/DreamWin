@@ -2,6 +2,7 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vlc="clr-namespace:LibVLCSharp.WPF;assembly=LibVLCSharp.WPF"
+             xmlns:views="clr-namespace:DreamWin.Views"
              Background="{StaticResource BgDeep}">
     <Grid x:Name="RootGrid">
         <Grid.ColumnDefinitions>
@@ -105,7 +106,7 @@
                                             <MultiBinding Converter="{StaticResource PiconUrl}" TargetNullValue="{x:Null}" FallbackValue="{x:Null}">
                                                 <Binding Path="ServiceReference"/>
                                                 <Binding Path="DataContext.ActiveReceiver"
-                                                         RelativeSource="{RelativeSource AncestorType=Window}"/>
+                                                         RelativeSource="{RelativeSource AncestorType={x:Type views:MainWindow}}"/>
                                             </MultiBinding>
                                         </Image.Source>
                                     </Image>
@@ -153,8 +154,8 @@
         <Grid Grid.Column="2">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*"/>
-                <RowDefinition x:Name="NowNextSplitterRow" Height="6"/>
-                <RowDefinition x:Name="NowNextRow" Height="200"/>
+                <RowDefinition x:Name="NowNextSplitterRow" Height="4"/>
+                <RowDefinition x:Name="NowNextRow" Height="Auto"/>
             </Grid.RowDefinitions>
 
             <!-- Video Player -->
@@ -367,13 +368,15 @@
 
                         <!-- Fullscreen: left-side channel list overlay -->
                         <Border x:Name="FullscreenChannelOverlay"
-                                HorizontalAlignment="Left" VerticalAlignment="Stretch"
+                                HorizontalAlignment="Left" VerticalAlignment="Top"
+                                MaxHeight="480"
                                 Width="240" Background="#E0000000"
                                 Visibility="Collapsed">
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="*"/>
+                                    <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
                                 <Border Grid.Row="0" Padding="12,10" Background="#20FFFFFF">
                                     <TextBlock Text="CHANNELS" FontSize="10" FontWeight="Bold"
@@ -398,7 +401,7 @@
                                                                       TargetNullValue="{x:Null}" FallbackValue="{x:Null}">
                                                             <Binding Path="ServiceReference"/>
                                                             <Binding Path="DataContext.ActiveReceiver"
-                                                                     RelativeSource="{RelativeSource AncestorType=Window}"/>
+                                                                     RelativeSource="{RelativeSource AncestorType={x:Type views:MainWindow}}"/>
                                                         </MultiBinding>
                                                     </Image.Source>
                                                 </Image>
@@ -426,6 +429,45 @@
                                         </Style>
                                     </ListBox.ItemContainerStyle>
                                 </ListBox>
+
+                                <!-- Now/Next info strip at bottom of overlay -->
+                                <Border Grid.Row="2" Background="#30FFFFFF" Padding="10,8"
+                                        Visibility="{Binding CurrentEvent, Converter={StaticResource NullToVisibility}}">
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                            <Image Width="22" Height="22" Stretch="Uniform" Margin="0,0,8,0"
+                                                   RenderOptions.BitmapScalingMode="HighQuality">
+                                                <Image.Source>
+                                                    <MultiBinding Converter="{StaticResource PiconUrl}"
+                                                                  TargetNullValue="{x:Null}" FallbackValue="{x:Null}">
+                                                        <Binding Path="StreamingService.ServiceReference"/>
+                                                        <Binding Path="DataContext.ActiveReceiver"
+                                                                 RelativeSource="{RelativeSource AncestorType={x:Type views:MainWindow}}"/>
+                                                    </MultiBinding>
+                                                </Image.Source>
+                                            </Image>
+                                            <TextBlock Text="{Binding StreamingService.ServiceName}"
+                                                       FontSize="11" FontWeight="Bold"
+                                                       Foreground="{StaticResource TextPrimary}"
+                                                       VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                        <TextBlock Text="NOW" FontSize="8" FontWeight="Bold"
+                                                   Foreground="{StaticResource Accent}"/>
+                                        <TextBlock Text="{Binding CurrentEvent.Title}"
+                                                   FontSize="11" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TextPrimary}"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Text="{Binding CurrentEvent.TimeRange}"
+                                                   FontSize="10" Foreground="{StaticResource TextMuted}"/>
+                                        <TextBlock Text="NEXT" FontSize="8" FontWeight="Bold"
+                                                   Foreground="{StaticResource TextMuted}" Margin="0,5,0,0"
+                                                   Visibility="{Binding NextEvent, Converter={StaticResource NullToVisibility}}"/>
+                                        <TextBlock Text="{Binding NextEvent.Title}"
+                                                   FontSize="10" Foreground="{StaticResource TextSecondary}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Visibility="{Binding NextEvent, Converter={StaticResource NullToVisibility}}"/>
+                                    </StackPanel>
+                                </Border>
                             </Grid>
                         </Border>
 
@@ -448,45 +490,80 @@
             <GridSplitter x:Name="NowNextSplitter" Grid.Row="1" Height="6" HorizontalAlignment="Stretch"
                           Background="{StaticResource BorderBrush}" ResizeDirection="Rows"/>
 
-            <!-- Now/Next Info Bar -->
+            <!-- Now/Next Info Bar — compact, always visible when a channel is playing -->
             <Border x:Name="NowNextBar" Grid.Row="2" Background="{StaticResource BgPanel}"
                     BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0"
-                    Padding="16,10"
+                    Padding="14,8"
                     Visibility="{Binding CurrentEvent, Converter={StaticResource NullToVisibility}}">
                 <Grid>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="44"/>   <!-- Channel logo -->
+                        <ColumnDefinition Width="*"/>    <!-- NOW -->
+                        <ColumnDefinition Width="12"/>   <!-- Divider -->
+                        <ColumnDefinition Width="*"/>    <!-- NEXT -->
                     </Grid.ColumnDefinitions>
 
-                    <!-- Now -->
-                    <StackPanel Grid.Column="0">
-                        <TextBlock Text="NOW" FontSize="10" FontWeight="Bold"
-                                   Foreground="{StaticResource Accent}" Margin="0,0,0,3"/>
-                        <TextBlock Text="{Binding CurrentEvent.Title}"
-                                   FontSize="13" FontWeight="Medium" Foreground="{StaticResource TextPrimary}"
-                                   TextTrimming="CharacterEllipsis"/>
-                        <TextBlock Text="{Binding CurrentEvent.TimeRange}"
-                                   FontSize="11" Foreground="{StaticResource TextSecondary}"/>
-                        <TextBlock Text="{Binding CurrentEvent.ShortDesc}"
-                                   FontSize="11" Foreground="{StaticResource TextMuted}"
-                                   TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
-                    </StackPanel>
+                    <!-- Channel logo -->
+                    <Image Grid.Column="0" Width="36" Height="36" Stretch="Uniform" Margin="0,0,10,0"
+                           RenderOptions.BitmapScalingMode="HighQuality" VerticalAlignment="Center">
+                        <Image.Source>
+                            <MultiBinding Converter="{StaticResource PiconUrl}"
+                                          TargetNullValue="{x:Null}" FallbackValue="{x:Null}">
+                                <Binding Path="StreamingService.ServiceReference"/>
+                                <Binding Path="DataContext.ActiveReceiver"
+                                         RelativeSource="{RelativeSource AncestorType={x:Type views:MainWindow}}"/>
+                            </MultiBinding>
+                        </Image.Source>
+                    </Image>
 
-                    <Separator Grid.Column="1" Width="1" Background="{StaticResource BorderBrush}" Margin="16,0"/>
+                    <!-- NOW -->
+                    <Grid Grid.Column="1">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="NOW  " FontSize="9" FontWeight="Bold"
+                                   Foreground="{StaticResource Accent}" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Row="0" Grid.Column="1"
+                                   Text="{Binding CurrentEvent.Title}"
+                                   FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}"
+                                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Row="1" Grid.ColumnSpan="2"
+                                   FontSize="10" Foreground="{StaticResource TextMuted}">
+                            <Run Text="{Binding CurrentEvent.TimeRange, Mode=OneWay}"/>
+                            <Run Text=" · "/>
+                            <Run Text="{Binding CurrentEvent.ShortDesc, Mode=OneWay}"/>
+                        </TextBlock>
+                    </Grid>
 
-                    <!-- Next -->
-                    <StackPanel Grid.Column="2"
-                                Visibility="{Binding NextEvent, Converter={StaticResource NullToVisibility}}">
-                        <TextBlock Text="NEXT" FontSize="10" FontWeight="Bold"
-                                   Foreground="{StaticResource TextMuted}" Margin="0,0,0,3"/>
-                        <TextBlock Text="{Binding NextEvent.Title}"
-                                   FontSize="13" Foreground="{StaticResource TextSecondary}"
-                                   TextTrimming="CharacterEllipsis"/>
-                        <TextBlock Text="{Binding NextEvent.TimeRange}"
-                                   FontSize="11" Foreground="{StaticResource TextMuted}"/>
-                    </StackPanel>
+                    <!-- Divider -->
+                    <Border Grid.Column="2" Width="1" Background="{StaticResource BorderBrush}" Margin="6,2"/>
+
+                    <!-- NEXT -->
+                    <Grid Grid.Column="3"
+                          Visibility="{Binding NextEvent, Converter={StaticResource NullToVisibility}}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="NEXT  " FontSize="9" FontWeight="Bold"
+                                   Foreground="{StaticResource TextMuted}" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Row="0" Grid.Column="1"
+                                   Text="{Binding NextEvent.Title}"
+                                   FontSize="12" Foreground="{StaticResource TextSecondary}"
+                                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Row="1" Grid.ColumnSpan="2"
+                                   Text="{Binding NextEvent.TimeRange}"
+                                   FontSize="10" Foreground="{StaticResource TextMuted}"/>
+                    </Grid>
                 </Grid>
             </Border>
         </Grid>

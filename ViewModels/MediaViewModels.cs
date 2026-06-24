@@ -30,6 +30,20 @@ public partial class MovieFolderGroup : ObservableObject
     }
 }
 
+// Simple bindable row for the 7-day quick picker. WPF's binding engine cannot resolve
+// ValueTuple.Item1/Item2 via reflection (no real PropertyDescriptor exists for them),
+// so a plain class with named properties is used instead.
+public class DayPickerEntry
+{
+    public string Label { get; }
+    public int Offset { get; }
+    public DayPickerEntry(string label, int offset)
+    {
+        Label = label;
+        Offset = offset;
+    }
+}
+
 // ─── EPG ViewModel ────────────────────────────────────────────────────────────
 public partial class EpgViewModel : BaseViewModel
 {
@@ -74,7 +88,8 @@ public partial class EpgViewModel : BaseViewModel
     public const double SlotHeightPx = 54.0;  // 30 min × 1.8px
 
     // Grid view
-    [ObservableProperty] private bool _isGridView = true;  // default: grid view
+    [ObservableProperty] private bool _isGridView = true;    // default: grid view
+    [ObservableProperty] private bool _isGridHorizontal = true;  // true = channels on X (columns), time on Y (rows)
     [ObservableProperty] private ObservableCollection<EpgGridRow> _gridRows = [];
     [ObservableProperty] private DateTime _gridStart = DateTime.Today;  // full day: midnight to midnight
 
@@ -109,6 +124,8 @@ public partial class EpgViewModel : BaseViewModel
         OnPropertyChanged(nameof(GridTimeSlots));
         OnPropertyChanged(nameof(GridTotalHeight));
         OnPropertyChanged(nameof(NowLineY));
+        OnPropertyChanged(nameof(GridDayOffset));
+        OnPropertyChanged(nameof(DayPickerDays));
     }
     partial void OnGridHoursChanged(int value)
     {
@@ -155,7 +172,7 @@ public partial class EpgViewModel : BaseViewModel
                 });
 
                 if (Bouquets.Any())
-                    await SelectBouquetAsync(Bouquets.First());
+                    await LoadBouquetAsync(Bouquets.First());
             }
             else if (SelectedBouquet != null && IsGridView && !GridRows.Any())
             {
@@ -168,7 +185,7 @@ public partial class EpgViewModel : BaseViewModel
     }
 
     [RelayCommand(CanExecute = nameof(IsNotBusy))]
-    private async Task SelectBouquetAsync(Service bouquet)
+    private async Task LoadBouquetAsync(Service bouquet)
     {
         SelectedBouquet = bouquet;
         var ct = NewLoadToken();
@@ -519,9 +536,32 @@ public partial class EpgViewModel : BaseViewModel
     }
 
     [RelayCommand]
-    private void RequestAddTimer(EpgEvent evt)
+    private void RequestAddTimer(EpgEvent? evt)
     {
+        if (evt == null) return;
+        CloseEpgDetail();   // dismiss detail popup if open
         AddTimerRequested?.Invoke(this, evt);
+    }
+
+    // ── EPG Detail popup ─────────────────────────────────────────────
+    [ObservableProperty] private EpgEvent? _selectedEventDetail;
+
+    [RelayCommand]
+    private void ShowEpgDetail(EpgEvent? evt)
+    {
+        if (evt == null) return;
+        SelectedEventDetail = evt;
+    }
+
+    [RelayCommand]
+    private void CloseEpgDetail() => SelectedEventDetail = null;
+
+    // ── Bouquet switching ─────────────────────────────────────────────
+    [RelayCommand]
+    private async Task SelectBouquetAsync(Service bouquet)
+    {
+        if (bouquet == null || bouquet == SelectedBouquet) return;
+        await LoadBouquetAsync(bouquet);
     }
 
     [RelayCommand]
@@ -530,6 +570,14 @@ public partial class EpgViewModel : BaseViewModel
         IsGridView = !IsGridView;
         if (IsGridView && SelectedBouquet != null)
             await LoadGridAsync();
+    }
+
+    [RelayCommand]
+    private void ToggleGridOrientation()
+    {
+        IsGridHorizontal = !IsGridHorizontal;
+        // Re-expose GridRows change so EpgView.ScrollToNow is called for the new orientation
+        OnPropertyChanged(nameof(GridRows));
     }
 
     [RelayCommand]
@@ -557,6 +605,31 @@ public partial class EpgViewModel : BaseViewModel
         GridStart = DateTime.Today;
         if (SelectedBouquet != null) await LoadGridAsync();
     }
+
+    [RelayCommand]
+    private async Task JumpToDayAsync(string offsetStr)
+    {
+        if (!int.TryParse(offsetStr, out var offset)) offset = 0;
+        GridStart = DateTime.Today.AddDays(offset);
+        if (SelectedBouquet != null) await LoadGridAsync();
+    }
+
+    // Labels for the 7-day quick picker (Today + next 6 days)
+    // Returns List<DayPickerEntry> — XAML binds to the Label/Offset properties
+    public List<DayPickerEntry> DayPickerDays =>
+        Enumerable.Range(0, 7)
+            .Select(i =>
+            {
+                var d = DateTime.Today.AddDays(i);
+                var label = i == 0 ? "Today" : d.ToString("ddd dd.MM");
+                return new DayPickerEntry(label, i);
+            })
+            .ToList();
+
+    // How many days offset from today the grid is showing (-7…+7)
+    // Used to highlight the correct day button in DayPickerDays
+    public int GridDayOffset => (int)Math.Round((GridStart.Date - DateTime.Today).TotalDays);
+
 
     private async Task LoadGridAsync()
     {
@@ -731,8 +804,52 @@ public partial class TimersViewModel : BaseViewModel
         await RunAsync(async () =>
         {
             await _api.DeleteTimerAsync(timer.ServiceRef, timer.Begin, timer.End);
-            Timers.Remove(timer);
+            await OnUiAsync(() => Timers.Remove(timer));
         });
+    }
+
+    [RelayCommand]
+    private async Task CleanupExpiredTimersAsync()
+    {
+        // States: 0=waiting, 1=preparing, 2=running, 3=done, 4=failed
+        // Clean up: done timers, failed timers, and waiting timers whose end time has passed
+        var expired = Timers
+            .Where(t => t.State == 3 || t.State == 4 || (t.State == 0 && t.EndTime < DateTime.Now))
+            .ToList();
+
+        if (expired.Count == 0)
+        {
+            System.Windows.MessageBox.Show(
+                "No completed timers to remove.",
+                "Cleanup", System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Information);
+            return;
+        }
+
+        var r = System.Windows.MessageBox.Show(
+            $"Remove {expired.Count} completed timer(s)?\n\n" +
+            string.Join("\n", expired.Take(5).Select(t => $"• {t.Name} ({t.EndTime:dd.MM HH:mm})")) +
+            (expired.Count > 5 ? $"\n  ...and {expired.Count - 5} more" : ""),
+            "Confirm Cleanup", System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Question);
+        if (r != System.Windows.MessageBoxResult.Yes) return;
+
+        await RunAsync(async () =>
+        {
+            // Delete in parallel, max 3 at a time
+            var semaphore = new SemaphoreSlim(3);
+            var tasks = expired.Select(async t =>
+            {
+                await semaphore.WaitAsync();
+                try { return await _api.DeleteTimerAsync(t.ServiceRef, t.Begin, t.End); }
+                finally { semaphore.Release(); }
+            });
+            await Task.WhenAll(tasks);
+            await OnUiAsync(() =>
+            {
+                foreach (var t in expired) Timers.Remove(t);
+            });
+        }, $"Removing {expired.Count} expired timers...");
     }
 
     [RelayCommand]

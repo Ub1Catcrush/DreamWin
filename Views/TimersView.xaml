@@ -21,6 +21,10 @@
                     <Button Style="{StaticResource BaseButton}" Padding="12,8" Margin="0,0,8,0"
                             Content="↺ Refresh" Command="{Binding LoadCommand}"
                             IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}"/>
+                    <Button Style="{StaticResource BaseButton}" Padding="12,8" Margin="0,0,8,0"
+                            Content="🗑 Clean up" Command="{Binding CleanupExpiredTimersCommand}"
+                            IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}"
+                            ToolTip="Remove all completed/expired timers"/>
                     <Button Style="{StaticResource AccentButton}" Padding="14,8"
                             Content="+ New Timer" Command="{Binding NewTimerCommand}"
                             IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}"/>
