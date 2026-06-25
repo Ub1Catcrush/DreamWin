@@ -461,13 +461,8 @@
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <Border Margin="0,1" CornerRadius="3" ClipToBounds="True"
-                                                        BorderThickness="1" Cursor="Hand">
-                                                    <Border.InputBindings>
-                                                        <MouseBinding MouseAction="LeftClick"
-                                                                      Command="{Binding DataContext.ShowEpgDetailCommand,
-                                                                                RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                                      CommandParameter="{Binding}"/>
-                                                    </Border.InputBindings>
+                                                        BorderThickness="1" Cursor="Hand"
+                                                        MouseLeftButtonUp="EventBorder_MouseLeftButtonUp">
                                                     <Border.ToolTip>
                                                         <StackPanel MaxWidth="280">
                                                             <TextBlock Text="{Binding Title}" FontWeight="Bold" TextWrapping="Wrap"/>
@@ -649,13 +644,8 @@
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <Border Margin="1,0" CornerRadius="3" ClipToBounds="True"
-                                                        BorderThickness="1" Cursor="Hand">
-                                                    <Border.InputBindings>
-                                                        <MouseBinding MouseAction="LeftClick"
-                                                                      Command="{Binding DataContext.ShowEpgDetailCommand,
-                                                                                RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                                      CommandParameter="{Binding}"/>
-                                                    </Border.InputBindings>
+                                                        BorderThickness="1" Cursor="Hand"
+                                                        MouseLeftButtonUp="EventBorder_MouseLeftButtonUp">
                                                     <Border.ToolTip>
                                                         <StackPanel MaxWidth="280">
                                                             <TextBlock Text="{Binding Title}" FontWeight="Bold" TextWrapping="Wrap"/>

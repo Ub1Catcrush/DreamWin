@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using DreamWin.Models;
 using DreamWin.ViewModels;
 
 namespace DreamWin.Views;
@@ -72,29 +73,28 @@ public partial class EpgView : UserControl
         => EndDrag(VEventScrollViewer);
 
     // ── Shared drag helpers ─────────────────────────────────────────────────
-    // A plain click on an event block must still open the EPG detail popup via
-    // that Border's MouseBinding. If we captured the mouse and marked the event
-    // Handled on the very first MouseDown, the click never reaches the Border —
-    // the ScrollViewer swallows it and the UI looks like it always starts a
-    // drag. So: on MouseDown we only remember where the press started (no
-    // capture, not Handled yet). Only once the mouse actually moves past a
-    // small threshold do we promote it to a real drag — at that point we
-    // capture the mouse and start consuming move events. A short click that
-    // never crosses the threshold is left alone and bubbles normally to the
-    // Border's MouseBinding/Command.
+    // Clicking an event block should open the EPG detail popup — but only on
+    // mouse-up, and only if the mouse wasn't actually dragged to get there.
+    // Relying on XAML MouseBinding for this competes directly with our own
+    // drag-to-scroll handling on the ScrollViewer (which sits above the event
+    // Borders in the tunneling/bubbling chain), so click vs. drag is decided
+    // here in one place instead:
     //
-    // The EPG detail popup is a separate overlay (Grid with its own
-    // MouseBinding/buttons) drawn on top of everything, not a child of the
-    // ScrollViewer. Closing it therefore never raises a MouseUp on the
-    // ScrollViewer, so EndDrag previously never ran and _dragArmed stayed
-    // true — the very next mouse move over the grid (even with the button
-    // no longer held) was then misread as an in-progress drag. To guard
-    // against that: (1) ContinueDrag re-checks that the left button is
-    // actually still pressed before doing anything, dropping the armed
-    // state otherwise, and (2) LostMouseCapture always clears both flags,
-    // covering any case where capture is released or stolen without our
-    // own MouseUp handler running (e.g. focus moving to an overlay).
-    private bool _dragArmed;   // mouse is down, watching for movement past the threshold
+    //  - PreviewMouseDown on the ScrollViewer (tunnels in first) just notes
+    //    the press position. No capture yet, nothing marked Handled — the
+    //    event is still free to reach the Border underneath.
+    //  - PreviewMouseMove watches for movement past the OS drag threshold.
+    //    Below it: still just a held-down click, nothing happens. Past it:
+    //    this is a real drag — capture the mouse and start scrolling.
+    //  - PreviewMouseUp on the ScrollViewer ends the drag (if one was
+    //    running) and remembers whether a drag just happened in
+    //    _wasDragging, then the matching MouseLeftButtonUp bubbles up from
+    //    the Border afterwards (tunneling completes before bubbling starts).
+    //    The Border's handler only opens the popup when _wasDragging is
+    //    false — i.e. the button went down and came back up without ever
+    //    crossing the drag threshold.
+    private bool _dragArmed;     // mouse is down, watching for movement past the threshold
+    private bool _wasDragging;   // a drag just finished on this mouse-up — suppress the click
 
     private void BeginDrag(MouseButtonEventArgs e, ScrollViewer? sv)
     {
@@ -105,7 +105,7 @@ public partial class EpgView : UserControl
         _dragScrollH = sv.HorizontalOffset;
         _dragScrollV = sv.VerticalOffset;
         // Don't capture or mark Handled yet — a plain click must still be able
-        // to reach the event Border underneath and trigger its MouseBinding.
+        // to reach the event Border underneath.
     }
 
     private void ContinueDrag(MouseEventArgs e, ScrollViewer? sv)
@@ -131,7 +131,7 @@ public partial class EpgView : UserControl
             var dy = Math.Abs(cur.Y - _dragStart.Y);
             if (dx < SystemParameters.MinimumHorizontalDragDistance &&
                 dy < SystemParameters.MinimumVerticalDragDistance)
-                return; // still just a press — not a drag (yet)
+                return; // still just a held-down press — not a drag (yet)
 
             // Movement crossed the threshold: this is a real drag now.
             _isDragging = true;
@@ -146,7 +146,8 @@ public partial class EpgView : UserControl
 
     private void EndDrag(ScrollViewer? sv)
     {
-        _dragArmed = false;
+        _dragArmed     = false;
+        _wasDragging   = _isDragging;
         if (!_isDragging) return;
         _isDragging = false;
         sv?.ReleaseMouseCapture();
@@ -158,9 +159,23 @@ public partial class EpgView : UserControl
     // etc.), make sure we never stay "stuck" thinking a drag is in progress.
     private void ScrollViewer_LostMouseCapture(object sender, MouseEventArgs e)
     {
-        _dragArmed  = false;
-        _isDragging = false;
+        _dragArmed   = false;
+        _isDragging  = false;
         if (sender is ScrollViewer sv) sv.Cursor = Cursors.Arrow;
+    }
+
+    // ── Event block click → EPG detail popup ───────────────────────────────
+    // Fires after PreviewMouseUp/EndDrag above (tunneling completes before
+    // bubbling), so _wasDragging already reflects whether this mouse-up
+    // followed a real drag. Only open the popup when it didn't.
+    private void EventBorder_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        var justDragged = _wasDragging;
+        _wasDragging = false;
+        if (justDragged) return;
+
+        if (sender is FrameworkElement { DataContext: EpgEvent evt } && DataContext is EpgViewModel vm)
+            vm.ShowEpgDetailCommand.Execute(evt);
     }
 
     // ── Scroll to current time on load / orientation change ───────────────────
