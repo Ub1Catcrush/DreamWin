@@ -165,8 +165,7 @@
                      otherwise the native video window breaks WPF hit-testing/focus for the
                      whole window. -->
                 <vlc:VideoView x:Name="VideoView" Background="Black"
-                               RenderOptions.BitmapScalingMode="NearestNeighbor"
-                               MouseDoubleClick="VideoView_MouseDoubleClick">
+                               RenderOptions.BitmapScalingMode="NearestNeighbor">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="*"/>      <!-- Video + overlays -->

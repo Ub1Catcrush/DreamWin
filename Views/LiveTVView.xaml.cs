@@ -447,12 +447,23 @@ public partial class LiveTVView : UserControl
         _mediaPlayer?.Stop();
     }
 
-    private void VideoView_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    // Double-click on the video is handled in MainWindow's low-level mouse hook
+    // (LowLevelMouseHookCallback) because the LibVLC native child HWND consumes
+    // mouse messages before WPF ever sees them — so MouseDoubleClick on the VideoView
+    // element never fires reliably. See MainWindow.xaml.cs for the implementation.
+
+    // Called from MainWindow's low-level mouse hook to check whether a screen-space
+    // point lands inside the video rendering surface, for double-click detection.
+    public bool IsScreenPointInVideo(System.Windows.Point screenPt)
     {
-        // Double-click toggles fullscreen (enter when normal, exit when already fullscreen),
-        // mirroring the F11/F keyboard shortcut and the fullscreen toolbar button.
-        Debug.WriteLine("[LiveTV] Double-click toggle fullscreen");
-        _vm?.ToggleFullscreenCommand.Execute(null);
+        try
+        {
+            var localPt = VideoView.PointFromScreen(screenPt);
+            return localPt.X >= 0 && localPt.Y >= 0
+                && localPt.X <= VideoView.ActualWidth
+                && localPt.Y <= VideoView.ActualHeight;
+        }
+        catch { return false; }
     }
 
     // Called from MainWindow.OnMouseMove when in fullscreen — shows overlays temporarily

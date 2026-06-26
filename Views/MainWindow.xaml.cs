@@ -127,7 +127,20 @@ public partial class MainWindow : Window
 
     private void TitleBar_MouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (e.LeftButton == MouseButtonState.Pressed)
+        if (e.ChangedButton != MouseButton.Left) return;
+
+        if (e.ClickCount == 2)
+        {
+            // Double-click on title bar: toggle maximize/restore
+            e.Handled = true;
+            WindowState = WindowState == WindowState.Maximized
+                ? WindowState.Normal
+                : WindowState.Maximized;
+            return;
+        }
+
+        // Single click: drag the window
+        if (e.ButtonState == MouseButtonState.Pressed)
             DragMove();
     }
 
@@ -363,6 +376,10 @@ public partial class MainWindow : Window
     private const int WM_RBUTTONDOWN = 0x0204;
     private const int WM_MBUTTONDOWN = 0x0207;
 
+    // Double-click detection for the video surface (native HWND swallows WPF mouse events)
+    private DateTime _lastVideoClickTime = DateTime.MinValue;
+    private System.Windows.Point _lastVideoClickPos;
+
     private NativeMethods.LowLevelMouseProc? _mouseHookProc;
     private IntPtr _mouseHookHandle = IntPtr.Zero;
 
@@ -408,6 +425,48 @@ public partial class MainWindow : Window
                 {
                     Dispatcher.BeginInvoke(new Action(OnFullscreenUserActivity));
                 }
+            }
+
+            // Detect double-click on the video surface.
+            // The LibVLC native child HWND consumes mouse messages, so WPF's
+            // MouseDoubleClick on the VideoView element never fires reliably when
+            // clicking the actual video. We detect it here instead by tracking
+            // left-button-down timing/position against the OS double-click thresholds.
+            if (msg == WM_LBUTTONDOWN && IsActive && _liveTvView != null)
+            {
+                // Dereference the hook struct HERE (on the hook thread) — lParam is a
+                // stack pointer that will be invalid by the time the Dispatcher lambda runs.
+                var hookStruct = System.Runtime.InteropServices.Marshal.PtrToStructure<NativeMethods.MSLLHOOKSTRUCT>(lParam);
+                var screenPt = new System.Windows.Point(hookStruct.pt.x, hookStruct.pt.y);
+
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (!IsActive || _liveTvView == null) return;
+
+                    // Check whether the click landed inside the VideoView element
+                    if (!_liveTvView.IsScreenPointInVideo(screenPt)) return;
+
+                    var now = DateTime.UtcNow;
+                    var dblClickMs = (double)NativeMethods.GetDoubleClickTime();
+                    var dblClickW  = NativeMethods.GetSystemMetrics(36); // SM_CXDOUBLECLK
+                    var dblClickH  = NativeMethods.GetSystemMetrics(37); // SM_CYDOUBLECLK
+
+                    var elapsed = (now - _lastVideoClickTime).TotalMilliseconds;
+                    var dx = Math.Abs(screenPt.X - _lastVideoClickPos.X);
+                    var dy = Math.Abs(screenPt.Y - _lastVideoClickPos.Y);
+
+                    if (elapsed <= dblClickMs && dx <= dblClickW && dy <= dblClickH)
+                    {
+                        // This is the second click of a double-click — toggle fullscreen
+                        _lastVideoClickTime = DateTime.MinValue; // reset so a triple-click doesn't re-fire
+                        _vm?.LiveTV.ToggleFullscreenCommand.Execute(null);
+                    }
+                    else
+                    {
+                        _lastVideoClickTime = now;
+                        _lastVideoClickPos  = screenPt;
+                    }
+                }));
             }
         }
 
@@ -552,6 +611,13 @@ public partial class MainWindow : Window
         [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto, SetLastError = true)]
         public static extern IntPtr GetModuleHandle(string lpModuleName);
 
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern uint GetDoubleClickTime();
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        public static extern int GetSystemMetrics(int nIndex);
+        // SM_CXDOUBLECLK = 36, SM_CYDOUBLECLK = 37
+
         [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
         public struct RECT
         {
@@ -559,6 +625,23 @@ public partial class MainWindow : Window
             public int top;
             public int right;
             public int bottom;
+        }
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        public struct POINT
+        {
+            public int x;
+            public int y;
+        }
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        public struct MSLLHOOKSTRUCT
+        {
+            public POINT pt;
+            public uint  mouseData;
+            public uint  flags;
+            public uint  time;
+            public IntPtr dwExtraInfo;
         }
 
         [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
