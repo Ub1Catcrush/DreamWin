@@ -175,8 +175,8 @@ public partial class LiveTVView : UserControl
         ChannelListGutterColumn.Width = new GridLength(6);
         if (ChannelListPanel != null) ChannelListPanel.Visibility = Visibility.Visible;
 
-        NowNextSplitterRow.Height = new GridLength(6);
-        NowNextRow.Height = new GridLength(200);
+        NowNextSplitterRow.Height = new GridLength(4);
+        NowNextRow.Height = GridLength.Auto;
         if (NowNextSplitter != null) NowNextSplitter.Visibility = Visibility.Visible;
         if (NowNextBar != null) NowNextBar.Visibility = Visibility.Visible;
 
@@ -449,12 +449,10 @@ public partial class LiveTVView : UserControl
 
     private void VideoView_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-        // Double-click: restart the current stream (handles hung/stalled streams)
-        if (_vm?.CurrentStreamUrl is { Length: > 0 } url)
-        {
-            Debug.WriteLine("[LiveTV] Double-click restart stream");
-            PlayStream(url);
-        }
+        // Double-click toggles fullscreen (enter when normal, exit when already fullscreen),
+        // mirroring the F11/F keyboard shortcut and the fullscreen toolbar button.
+        Debug.WriteLine("[LiveTV] Double-click toggle fullscreen");
+        _vm?.ToggleFullscreenCommand.Execute(null);
     }
 
     // Called from MainWindow.OnMouseMove when in fullscreen — shows overlays temporarily

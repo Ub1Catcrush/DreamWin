@@ -260,12 +260,20 @@
                                                        Foreground="{StaticResource TextMuted}"
                                                        TextTrimming="CharacterEllipsis" Margin="0,3,0,0"/>
                                         </StackPanel>
-                                        <Button Grid.Column="2" Style="{StaticResource AccentButton}"
-                                                Content="+ Timer" Padding="10,6" FontSize="11"
-                                                VerticalAlignment="Center"
-                                                Command="{Binding DataContext.RequestAddTimerCommand,
-                                                          RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                CommandParameter="{Binding}"/>
+                                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center"
+                                                    HorizontalAlignment="Right">
+                                            <Button Style="{StaticResource BaseButton}"
+                                                    Content="⟲ Auto" Padding="10,6" FontSize="11" Margin="0,0,6,0"
+                                                    ToolTip="Create an AutoTimer rule matching this show's title"
+                                                    Command="{Binding DataContext.RequestAddAutoTimerCommand,
+                                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}"/>
+                                            <Button Style="{StaticResource AccentButton}"
+                                                    Content="+ Timer" Padding="10,6" FontSize="11"
+                                                    Command="{Binding DataContext.RequestAddTimerCommand,
+                                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}"/>
+                                        </StackPanel>
                                     </Grid>
                                 </Border>
                             </DataTemplate>
@@ -412,6 +420,8 @@
                               x:Name="EventScrollViewer"
                               HorizontalScrollBarVisibility="Auto"
                               VerticalScrollBarVisibility="Auto"
+                              ScrollViewer.PanningMode="None"
+                              CanContentScroll="False"
                               ScrollChanged="EventScrollViewer_ScrollChanged"
                               PreviewMouseDown="EventScrollViewer_PreviewMouseDown"
                               PreviewMouseMove="EventScrollViewer_PreviewMouseMove"
@@ -432,7 +442,8 @@
                                 <Canvas Width="180"
                                         Height="{Binding DataContext.GridTotalHeight,
                                                  RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                        ClipToBounds="True">
+                                        ClipToBounds="True"
+                                        Background="Transparent">
                                     <Rectangle Canvas.Left="179" Canvas.Top="0" Width="1"
                                                Height="{Binding DataContext.GridTotalHeight,
                                                         RelativeSource={RelativeSource AncestorType=UserControl}}"
@@ -447,7 +458,8 @@
                                             <ItemsPanelTemplate>
                                                 <Canvas Width="180"
                                                         Height="{Binding DataContext.GridTotalHeight,
-                                                                 RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                                                                 RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                        Background="Transparent"/>
                                             </ItemsPanelTemplate>
                                         </ItemsControl.ItemsPanel>
                                         <ItemsControl.ItemContainerStyle>
@@ -594,6 +606,8 @@
                               x:Name="VEventScrollViewer"
                               HorizontalScrollBarVisibility="Auto"
                               VerticalScrollBarVisibility="Auto"
+                              ScrollViewer.PanningMode="None"
+                              CanContentScroll="False"
                               ScrollChanged="VEventScrollViewer_ScrollChanged"
                               PreviewMouseDown="VEventScrollViewer_PreviewMouseDown"
                               PreviewMouseMove="VEventScrollViewer_PreviewMouseMove"
@@ -613,7 +627,8 @@
                                 <Canvas Height="54"
                                         Width="{Binding DataContext.GridTotalHeight,
                                                 RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                        ClipToBounds="True">
+                                        ClipToBounds="True"
+                                        Background="Transparent">
                                     <!-- Bottom border rule -->
                                     <Rectangle Canvas.Left="0" Canvas.Top="53"
                                                Width="{Binding DataContext.GridTotalHeight,
@@ -630,7 +645,8 @@
                                             <ItemsPanelTemplate>
                                                 <Canvas Height="54"
                                                         Width="{Binding DataContext.GridTotalHeight,
-                                                                RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                                                                RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                        Background="Transparent"/>
                                             </ItemsPanelTemplate>
                                         </ItemsControl.ItemsPanel>
                                         <ItemsControl.ItemContainerStyle>
@@ -737,6 +753,11 @@
                     <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
                         <Button Style="{StaticResource BaseButton}" Padding="14,7" Margin="0,0,8,0"
                                 Content="Close" Command="{Binding CloseEpgDetailCommand}"/>
+                        <Button Style="{StaticResource BaseButton}" Padding="14,7" Margin="0,0,8,0"
+                                Content="⟲ Add AutoTimer"
+                                ToolTip="Create an AutoTimer rule matching this show's title"
+                                Command="{Binding RequestAddAutoTimerCommand}"
+                                CommandParameter="{Binding SelectedEventDetail}"/>
                         <Button Style="{StaticResource AccentButton}" Padding="14,7"
                                 Content="+ Add Timer"
                                 Command="{Binding RequestAddTimerCommand}"

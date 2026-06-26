@@ -168,8 +168,13 @@
                                RenderOptions.BitmapScalingMode="NearestNeighbor"
                                MouseDoubleClick="VideoView_MouseDoubleClick">
                     <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*"/>      <!-- Video + overlays -->
+                            <RowDefinition Height="Auto"/>   <!-- Controlbar (auto-sized, collapses when hidden) -->
+                        </Grid.RowDefinitions>
+
                         <!-- No stream placeholder -->
-                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                        <StackPanel Grid.Row="0" HorizontalAlignment="Center" VerticalAlignment="Center"
                                     Visibility="{Binding IsPlaying, Converter={StaticResource BoolToVisibilityInverted}}">
                             <TextBlock Text="📺" FontSize="64" HorizontalAlignment="Center" Opacity="0.2"/>
                             <TextBlock Text="Select a channel to start watching"
@@ -178,7 +183,7 @@
                         </StackPanel>
 
                         <!-- Player Controls Overlay: always visible when playing normal, auto-hides in fullscreen -->
-                        <Border x:Name="PlayerControlsOverlay" VerticalAlignment="Bottom" Background="#CC000000"
+                        <Border x:Name="PlayerControlsOverlay" Grid.Row="1" Background="#CC000000"
                                 Visibility="{Binding IsPlaying, Converter={StaticResource BoolToVisibility}}">
                             <Grid Margin="12,8">
                                 <Grid.ColumnDefinitions>
@@ -307,76 +312,51 @@
                                 </StackPanel>
                             </Grid>
                         </Border>
-                        <!-- Fullscreen: right-side EPG overlay (now/next for nearby channels) -->
+                        <!-- Fullscreen: top-right EPG overlay (now/next for current channel only) -->
                         <Border x:Name="FullscreenEpgOverlay"
+                                Grid.Row="0"
                                 HorizontalAlignment="Right" VerticalAlignment="Top"
-                                Width="340" Background="#E0000000"
-                                Visibility="Collapsed"
-                                Margin="0,0,0,0">
-                            <StackPanel Margin="14,14,14,14">
-                                <TextBlock Text="NOW ON AIR" FontSize="10" FontWeight="Bold"
-                                           Foreground="{StaticResource Accent}" Margin="0,0,0,8"/>
-                                <!-- Current channel info -->
-                                <Border Background="#22FFFFFF" CornerRadius="6" Padding="10,8" Margin="0,0,0,6">
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding SelectedService.ServiceName}"
-                                                   FontSize="13" FontWeight="Bold"
-                                                   Foreground="{StaticResource TextPrimary}"/>
-                                        <TextBlock Text="{Binding CurrentEvent.Title}"
-                                                   FontSize="12" Foreground="{StaticResource Accent}"
-                                                   Margin="0,2,0,0"/>
-                                        <TextBlock Text="{Binding CurrentEvent.TimeRange}"
-                                                   FontSize="10" Foreground="{StaticResource TextMuted}"
-                                                   Margin="0,2,0,0"/>
-                                        <TextBlock Text="{Binding NextEvent.Title, StringFormat='Next: {0}'}"
-                                                   FontSize="10" Foreground="{StaticResource TextSecondary}"
-                                                   Margin="0,4,0,0"
-                                                   Visibility="{Binding NextEvent, Converter={StaticResource NullToVisibility}}"/>
-                                    </StackPanel>
-                                </Border>
-                                <!-- Nearby channels now/next -->
-                                <ItemsControl ItemsSource="{Binding NearbyNowNext}"
-                                              MaxHeight="400">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Border Padding="8,6" Margin="0,2" CornerRadius="4"
-                                                    Background="#15FFFFFF">
-                                                <Grid>
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="100"/>
-                                                        <ColumnDefinition Width="*"/>
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock Grid.Column="0"
-                                                               Text="{Binding ServiceName}"
-                                                               FontSize="10" Foreground="{StaticResource TextMuted}"
-                                                               VerticalAlignment="Center"
-                                                               TextTrimming="CharacterEllipsis"/>
-                                                    <StackPanel Grid.Column="1">
-                                                        <TextBlock Text="{Binding NowTitle}"
-                                                                   FontSize="11" Foreground="{StaticResource TextPrimary}"
-                                                                   TextTrimming="CharacterEllipsis"/>
-                                                        <TextBlock Text="{Binding NowTime}"
-                                                                   FontSize="9" Foreground="{StaticResource TextMuted}"/>
-                                                    </StackPanel>
-                                                </Grid>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
+                                Width="280" Background="#CC000000"
+                                CornerRadius="0,0,0,8"
+                                Visibility="Collapsed">
+                            <StackPanel Margin="12,10,12,12">
+                                <TextBlock Text="{Binding SelectedService.ServiceName}"
+                                           FontSize="12" FontWeight="Bold"
+                                           Foreground="{StaticResource TextPrimary}"
+                                           TextTrimming="CharacterEllipsis"/>
+                                <StackPanel Margin="0,6,0,0"
+                                            Visibility="{Binding CurrentEvent, Converter={StaticResource NullToVisibility}}">
+                                    <TextBlock Text="NOW" FontSize="9" FontWeight="Bold"
+                                               Foreground="{StaticResource Accent}"/>
+                                    <TextBlock Text="{Binding CurrentEvent.Title}"
+                                               FontSize="11" Foreground="{StaticResource TextPrimary}"
+                                               TextTrimming="CharacterEllipsis" Margin="0,1,0,0"/>
+                                    <TextBlock Text="{Binding CurrentEvent.TimeRange}"
+                                               FontSize="9" Foreground="{StaticResource TextMuted}"/>
+                                </StackPanel>
+                                <StackPanel Margin="0,6,0,0"
+                                            Visibility="{Binding NextEvent, Converter={StaticResource NullToVisibility}}">
+                                    <TextBlock Text="NEXT" FontSize="9" FontWeight="Bold"
+                                               Foreground="{StaticResource TextMuted}"/>
+                                    <TextBlock Text="{Binding NextEvent.Title}"
+                                               FontSize="11" Foreground="{StaticResource TextSecondary}"
+                                               TextTrimming="CharacterEllipsis" Margin="0,1,0,0"/>
+                                    <TextBlock Text="{Binding NextEvent.TimeRange}"
+                                               FontSize="9" Foreground="{StaticResource TextMuted}"/>
+                                </StackPanel>
                             </StackPanel>
                         </Border>
 
                         <!-- Fullscreen: left-side channel list overlay -->
                         <Border x:Name="FullscreenChannelOverlay"
-                                HorizontalAlignment="Left" VerticalAlignment="Top"
-                                MaxHeight="480"
+                                Grid.Row="0"
+                                HorizontalAlignment="Left" VerticalAlignment="Stretch"
                                 Width="240" Background="#E0000000"
                                 Visibility="Collapsed">
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="*"/>
-                                    <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
                                 <Border Grid.Row="0" Padding="12,10" Background="#20FFFFFF">
                                     <TextBlock Text="CHANNELS" FontSize="10" FontWeight="Bold"
@@ -429,45 +409,6 @@
                                         </Style>
                                     </ListBox.ItemContainerStyle>
                                 </ListBox>
-
-                                <!-- Now/Next info strip at bottom of overlay -->
-                                <Border Grid.Row="2" Background="#30FFFFFF" Padding="10,8"
-                                        Visibility="{Binding CurrentEvent, Converter={StaticResource NullToVisibility}}">
-                                    <StackPanel>
-                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                            <Image Width="22" Height="22" Stretch="Uniform" Margin="0,0,8,0"
-                                                   RenderOptions.BitmapScalingMode="HighQuality">
-                                                <Image.Source>
-                                                    <MultiBinding Converter="{StaticResource PiconUrl}"
-                                                                  TargetNullValue="{x:Null}" FallbackValue="{x:Null}">
-                                                        <Binding Path="StreamingService.ServiceReference"/>
-                                                        <Binding Path="DataContext.ActiveReceiver"
-                                                                 RelativeSource="{RelativeSource AncestorType={x:Type views:MainWindow}}"/>
-                                                    </MultiBinding>
-                                                </Image.Source>
-                                            </Image>
-                                            <TextBlock Text="{Binding StreamingService.ServiceName}"
-                                                       FontSize="11" FontWeight="Bold"
-                                                       Foreground="{StaticResource TextPrimary}"
-                                                       VerticalAlignment="Center"/>
-                                        </StackPanel>
-                                        <TextBlock Text="NOW" FontSize="8" FontWeight="Bold"
-                                                   Foreground="{StaticResource Accent}"/>
-                                        <TextBlock Text="{Binding CurrentEvent.Title}"
-                                                   FontSize="11" FontWeight="SemiBold"
-                                                   Foreground="{StaticResource TextPrimary}"
-                                                   TextTrimming="CharacterEllipsis"/>
-                                        <TextBlock Text="{Binding CurrentEvent.TimeRange}"
-                                                   FontSize="10" Foreground="{StaticResource TextMuted}"/>
-                                        <TextBlock Text="NEXT" FontSize="8" FontWeight="Bold"
-                                                   Foreground="{StaticResource TextMuted}" Margin="0,5,0,0"
-                                                   Visibility="{Binding NextEvent, Converter={StaticResource NullToVisibility}}"/>
-                                        <TextBlock Text="{Binding NextEvent.Title}"
-                                                   FontSize="10" Foreground="{StaticResource TextSecondary}"
-                                                   TextTrimming="CharacterEllipsis"
-                                                   Visibility="{Binding NextEvent, Converter={StaticResource NullToVisibility}}"/>
-                                    </StackPanel>
-                                </Border>
                             </Grid>
                         </Border>
 
@@ -481,7 +422,7 @@
                              layer as the controls above (i.e. it DOES reach the screen), and
                              PlayStream briefly shows it to mask that gap until the first frame
                              of the new stream actually arrives. -->
-                        <Border x:Name="ChannelSwitchMask" Background="Black"
+                        <Border x:Name="ChannelSwitchMask" Grid.Row="0" Grid.RowSpan="2" Background="Black"
                                 Visibility="Collapsed" IsHitTestVisible="False"/>
                     </Grid>
                 </vlc:VideoView>

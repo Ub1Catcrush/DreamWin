@@ -1,6 +1,7 @@
 <UserControl x:Class="DreamWin.Views.TimersView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:DreamWin.Controls"
              Background="{StaticResource BgDeep}">
     <Grid>
         <Grid.RowDefinitions>
@@ -110,10 +111,25 @@
                                                               RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                     CommandParameter="{Binding}"/>
                                             <Button Style="{StaticResource BaseButton}" Margin="0,0,6,0"
-                                                    Padding="8,5" FontSize="11" Content="Toggle"
+                                                    Padding="8,5" FontSize="11"
                                                     Command="{Binding DataContext.ToggleTimerCommand,
                                                               RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                    CommandParameter="{Binding}"/>
+                                                    CommandParameter="{Binding}">
+                                                <Button.Content>
+                                                    <TextBlock>
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Text" Value="Disable"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsDisabled}" Value="True">
+                                                                        <Setter Property="Text" Value="Enable"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                </Button.Content>
+                                            </Button>
                                             <Button Style="{StaticResource DangerButton}"
                                                     Padding="8,5" FontSize="11" Content="Delete"
                                                     Command="{Binding DataContext.DeleteTimerCommand,
@@ -162,11 +178,30 @@
                         <TextBox Text="{Binding EditServiceName, UpdateSourceTrigger=PropertyChanged}"
                                  Style="{StaticResource DarkTextBox}" Margin="0,0,0,12"/>
 
-                        <!-- Service ref -->
-                        <TextBlock Text="Service reference" FontSize="11" Foreground="{StaticResource TextSecondary}" Margin="0,0,0,4"/>
-                        <TextBox Text="{Binding EditServiceRef, UpdateSourceTrigger=PropertyChanged}"
-                                 Style="{StaticResource DarkTextBox}" Margin="0,0,0,12"
-                                 ToolTip="e.g. 1:0:1:283D:7E9:1:C00000:0:0:0:"/>
+                        <!-- Channel -->
+                        <TextBlock Text="Channel" FontSize="11" Foreground="{StaticResource TextSecondary}" Margin="0,0,0,4"/>
+                        <Border Background="{StaticResource BgCard}" BorderBrush="{StaticResource BorderBrush}"
+                                BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock FontSize="13" Foreground="{StaticResource TextPrimary}" Margin="0,0,0,6">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Text" Value="{Binding EditServiceName}"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding EditServiceName}" Value="">
+                                                    <Setter Property="Text" Value="No channel selected"/>
+                                                    <Setter Property="Foreground" Value="{StaticResource TextMuted}"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                                <Button Style="{StaticResource BaseButton}" Padding="10,6" FontSize="12"
+                                        HorizontalAlignment="Left"
+                                        Content="📺 Select channel…"
+                                        Command="{Binding OpenChannelPickerCommand}"/>
+                            </StackPanel>
+                        </Border>
 
                         <!-- Date -->
                         <TextBlock Text="Date" FontSize="11" Foreground="{StaticResource TextSecondary}" Margin="0,0,0,4"/>
@@ -182,22 +217,21 @@
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
                             <StackPanel Grid.Column="0">
-                                <TextBlock Text="Start time (HH:MM)" FontSize="11" Foreground="{StaticResource TextSecondary}" Margin="0,0,0,4"/>
-                                <TextBox Text="{Binding EditBeginTime, UpdateSourceTrigger=PropertyChanged}"
-                                         Style="{StaticResource DarkTextBox}"/>
+                                <TextBlock Text="Start time" FontSize="11" Foreground="{StaticResource TextSecondary}" Margin="0,0,0,4"/>
+                                <controls:TimePicker Value="{Binding EditBeginTime, UpdateSourceTrigger=PropertyChanged}"
+                                                      HorizontalAlignment="Left"/>
                             </StackPanel>
                             <StackPanel Grid.Column="2">
-                                <TextBlock Text="End time (HH:MM)" FontSize="11" Foreground="{StaticResource TextSecondary}" Margin="0,0,0,4"/>
-                                <TextBox Text="{Binding EditEndTime, UpdateSourceTrigger=PropertyChanged}"
-                                         Style="{StaticResource DarkTextBox}"/>
+                                <TextBlock Text="End time" FontSize="11" Foreground="{StaticResource TextSecondary}" Margin="0,0,0,4"/>
+                                <controls:TimePicker Value="{Binding EditEndTime, UpdateSourceTrigger=PropertyChanged}"
+                                                      HorizontalAlignment="Left"/>
                             </StackPanel>
                         </Grid>
 
                         <!-- After event -->
                         <TextBlock Text="After event" FontSize="11" Foreground="{StaticResource TextSecondary}" Margin="0,0,0,4"/>
                         <ComboBox SelectedIndex="{Binding EditAfterEvent}" Margin="0,0,0,20"
-                                  Background="{StaticResource BgCard}" Foreground="{StaticResource TextPrimary}"
-                                  BorderBrush="{StaticResource BorderBrush}">
+                                  Style="{StaticResource DarkComboBox}">
                             <ComboBoxItem Content="Nothing"/>
                             <ComboBoxItem Content="Standby"/>
                             <ComboBoxItem Content="Deep standby"/>
@@ -236,6 +270,104 @@
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                 <TextBlock Text="{Binding StatusMessage}" Foreground="White" FontSize="14" HorizontalAlignment="Center"/>
             </StackPanel>
+        </Border>
+
+        <!-- Channel picker modal (single-select) -->
+        <Border Grid.Row="0" Grid.RowSpan="2" Background="#B0000000"
+                Visibility="{Binding IsChannelPickerOpen, Converter={StaticResource BoolToVisibility}}">
+            <Border.InputBindings>
+                <MouseBinding MouseAction="LeftClick" Command="{Binding CloseChannelPickerCommand}"/>
+            </Border.InputBindings>
+            <Border Width="640" Height="520" Background="{StaticResource BgPanel}"
+                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="10"
+                    MouseDown="ChannelPickerDialog_MouseDown">
+                <Grid Margin="18">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Header -->
+                    <Grid Grid.Row="0" Margin="0,0,0,12">
+                        <TextBlock Text="Select a channel" FontSize="16" FontWeight="Bold"
+                                   Foreground="{StaticResource TextPrimary}"/>
+                        <Button Style="{StaticResource BaseButton}" Padding="8,4" FontSize="13"
+                                Content="✕" HorizontalAlignment="Right"
+                                Command="{Binding CloseChannelPickerCommand}"/>
+                    </Grid>
+
+                    <!-- Search -->
+                    <TextBox Grid.Row="1" Margin="0,0,0,10"
+                             Text="{Binding ChannelPickerSearch, UpdateSourceTrigger=PropertyChanged}"
+                             Style="{StaticResource DarkTextBox}"
+                             Tag="Search channels…"/>
+
+                    <!-- Bouquets + channels -->
+                    <Grid Grid.Row="2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="180"/>
+                            <ColumnDefinition Width="8"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <ListBox Grid.Column="0" Background="{StaticResource BgCard}"
+                                 BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                                 ItemsSource="{Binding PickerBouquets}"
+                                 SelectedItem="{Binding PickerSelectedBouquet}"
+                                 DisplayMemberPath="ServiceName">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+                                    <Setter Property="Padding" Value="8,6"/>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                        </ListBox>
+
+                        <Border Grid.Column="2" Background="{StaticResource BgCard}"
+                                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                            <Grid>
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <ItemsControl ItemsSource="{Binding PickerChannels}" Margin="4">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Cursor="Hand" Padding="8,6" CornerRadius="4">
+                                                    <Border.InputBindings>
+                                                        <MouseBinding MouseAction="LeftClick"
+                                                                      Command="{Binding DataContext.SelectPickerChannelCommand,
+                                                                                RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                      CommandParameter="{Binding}"/>
+                                                    </Border.InputBindings>
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Style.Triggers>
+                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                    <Setter Property="Background" Value="{StaticResource BgHover}"/>
+                                                                </Trigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <TextBlock Text="{Binding Name}" FontSize="13"
+                                                               Foreground="{StaticResource TextPrimary}"/>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+
+                                <!-- In-dialog loading feedback — see AutoTimersView's identical
+                                     comment: the page-wide busy overlay sits behind this dialog. -->
+                                <Border Background="{StaticResource BgCard}"
+                                        Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}">
+                                    <TextBlock Text="{Binding StatusMessage}" FontSize="12"
+                                               Foreground="{StaticResource TextSecondary}"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </Grid>
+            </Border>
         </Border>
     </Grid>
 </UserControl>

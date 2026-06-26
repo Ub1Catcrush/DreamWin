@@ -850,22 +850,46 @@ public class Enigma2Service : IDisposable
             var list = new List<AutoTimer>();
             var doc = System.Xml.Linq.XDocument.Parse(raw);
 
-            // Shape (per the autotimer plugin's XML, as confirmed against a real
-            // receiver response):
-            // <autotimer version="8" nextTimerId="67">
-            //   <defaults .../>
+            // Shape (per the autotimer plugin's XML; confirmed against both a real
+            // receiver response and the plugin source). A rule can restrict to
+            // MULTIPLE services, not just one — they show up as repeated child
+            // elements. Different AutoTimer/OpenWebif versions have used slightly
+            // different tag shapes for this over the years, so all known variants
+            // are read defensively rather than assuming one fixed schema:
             //   <timer name="..." match="..." enabled="yes" id="1" from="21:00" to="00:30" ...>
-            //     <e2service>
-            //       <e2servicereference>...</e2servicereference>
-            //       <e2servicename>...</e2servicename>
-            //     </e2service>
+            //     <e2service><e2servicereference>...</e2servicereference><e2servicename>...</e2servicename></e2service>
+            //     <e2service><e2servicereference>...</e2servicereference><e2servicename>...</e2servicename></e2service>
+            //     <!-- OR, on some versions: -->
+            //     <serviceref>1:0:1:...:</serviceref>
+            //     <serviceref>1:0:1:...:</serviceref>
             //     ...
             //   </timer>
-            //   ...
-            // </autotimer>
             foreach (var timerEl in doc.Descendants("timer"))
             {
-                var firstService = timerEl.Element("e2service");
+                var serviceRefs = new List<string>();
+                var serviceNames = new List<string>();
+
+                foreach (var svcEl in timerEl.Elements("e2service"))
+                {
+                    var sref = svcEl.Element("e2servicereference")?.Value;
+                    if (string.IsNullOrWhiteSpace(sref)) continue;
+                    serviceRefs.Add(sref);
+                    serviceNames.Add(svcEl.Element("e2servicename")?.Value ?? "");
+                }
+
+                // Fallback schema: bare <serviceref>...</serviceref> elements with no
+                // name attached (older/alternate plugin versions).
+                if (serviceRefs.Count == 0)
+                {
+                    foreach (var srefEl in timerEl.Elements("serviceref"))
+                    {
+                        var sref = srefEl.Value;
+                        if (string.IsNullOrWhiteSpace(sref)) continue;
+                        serviceRefs.Add(sref);
+                        serviceNames.Add("");
+                    }
+                }
+
                 var at = new AutoTimer
                 {
                     Id = timerEl.Attribute("id")?.Value ?? "",
@@ -878,7 +902,8 @@ public class Enigma2Service : IDisposable
                     SearchCase = string.Equals(timerEl.Attribute("searchCase")?.Value, "sensitive", StringComparison.OrdinalIgnoreCase) ? 1 : 0,
                     JustPlay = timerEl.Attribute("justplay")?.Value == "1" ? 1 : 0,
                     AvoidDuplicates = int.TryParse(timerEl.Attribute("avoidDuplicateDescription")?.Value, out var avd) ? avd : 0,
-                    ServiceRef = firstService?.Element("e2servicereference")?.Value ?? "",
+                    ServiceRefs = serviceRefs,
+                    ServiceNames = serviceNames,
                     MaxDuration = int.TryParse(timerEl.Attribute("maxduration")?.Value, out var md) ? md : 0,
                     Tags = timerEl.Attribute("tags")?.Value ?? "",
                 };
@@ -895,14 +920,16 @@ public class Enigma2Service : IDisposable
         }
     }
 
-    // "searchType" in the autotimer XML is a word (e.g. "start", "exact", "partial"),
-    // not the numeric code the rest of this app's AutoTimer model uses internally for
-    // its own add/edit calls — map the common values; default to 0 (partial/contains)
-    // for anything unrecognised rather than throwing.
+    // "searchType" in the autotimer XML is a word (e.g. "start", "end", "exact",
+    // "partial"), not the numeric code the rest of this app's AutoTimer model uses
+    // internally (0=Contains, 1=Exact, 2=Starts with, 3=Ends with — see
+    // AutoTimer.SearchTypeText) — map the known values; default to 0 (partial/
+    // contains) for anything unrecognised rather than throwing.
     private static int ParseAutoTimerSearchType(string? value) => value?.ToLowerInvariant() switch
     {
         "exact" => 1,
         "start" => 2,
+        "end" => 3,
         "partial" or null or "" => 0,
         _ => 0
     };
@@ -914,20 +941,51 @@ public class Enigma2Service : IDisposable
             // Same standalone-plugin situation as GetAutoTimersAsync — these are not
             // OpenWebif endpoints.
             var endpoint = string.IsNullOrEmpty(timer.Id) ? "autotimer/add" : "autotimer/edit";
+
+            // searchType/searchCase/justplay are word-valued in the real AutoTimer
+            // HTTP API (AutoTimerAddOrEditAutoTimerResource), not the numeric codes
+            // this app uses internally for its own ComboBox SelectedIndex bindings —
+            // map them here rather than sending raw ints, which the plugin would
+            // silently fail to recognise (and fall back to its own defaults for).
+            var searchTypeWord = timer.SearchType switch
+            {
+                1 => "exact",
+                2 => "start",
+                3 => "end",
+                _ => "partial",
+            };
+            var searchCaseWord = timer.SearchCase == 1 ? "sensitive" : "insensitive";
+            var justplayWord = timer.JustPlay == 1 ? "zap" : "record";
+
             var query = new Dictionary<string, string>
             {
                 ["name"]    = timer.Name,
                 ["match"]   = timer.Match,
                 ["enabled"] = timer.Enabled ? "yes" : "no",
-                ["searchType"]  = timer.SearchType.ToString(),
-                ["searchCase"]  = timer.SearchCase.ToString(),
-                ["justplay"]    = timer.JustPlay.ToString(),
+                ["searchType"]  = searchTypeWord,
+                ["searchCase"]  = searchCaseWord,
+                ["justplay"]    = justplayWord,
                 ["avoidDuplicateDescription"] = timer.AvoidDuplicates.ToString(),
             };
             if (!string.IsNullOrEmpty(timer.Id)) query["id"] = timer.Id;
-            if (!string.IsNullOrEmpty(timer.From)) query["from"] = timer.From;
-            if (!string.IsNullOrEmpty(timer.To))   query["to"]   = timer.To;
-            if (!string.IsNullOrEmpty(timer.ServiceRef)) query["serviceref"] = timer.ServiceRef;
+            // The plugin's real parameter names for the time window are
+            // "timespanFrom"/"timespanTo" (HH:MM), NOT "from"/"to" — those only
+            // exist as XML attribute names in the saved autotimer.xml, not as HTTP
+            // parameters the add/edit endpoint understands. Sending "from"/"to" was
+            // silently ignored, which is why time-window filters never actually took
+            // effect despite being entered in the edit form.
+            if (!string.IsNullOrEmpty(timer.From) && !string.IsNullOrEmpty(timer.To))
+            {
+                query["timespanFrom"] = timer.From;
+                query["timespanTo"] = timer.To;
+            }
+            // "services" takes a COMMA-SEPARATED LIST of service references — the
+            // plugin genuinely supports restricting one rule to multiple channels
+            // (confirmed against AutoTimerAddOrEditAutoTimerResource's source, which
+            // does get("services").split(',')). An empty/omitted value means "search
+            // all channels".
+            if (timer.ServiceRefs.Count > 0)
+                query["services"] = string.Join(",", timer.ServiceRefs);
             if (timer.MaxDuration > 0) query["maxduration"] = timer.MaxDuration.ToString();
             if (!string.IsNullOrEmpty(timer.Tags)) query["tags"] = timer.Tags;
 

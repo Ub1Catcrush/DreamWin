@@ -37,6 +37,13 @@ public partial class MainWindow : Window
         DataContext = _vm;
 
         _vm.Epg.AddTimerRequested += async (_, evt) => await _vm.Timers.AddFromEpgAsync(evt);
+        _vm.Epg.AddAutoTimerRequested += (_, evt) =>
+        {
+            // Switch to the AutoTimers tab first so the prefilled edit form (opened
+            // synchronously below) is actually visible to the user right away.
+            _vm.NavigateCommand.Execute(AppView.AutoTimers);
+            _vm.AutoTimers.AddFromEpg(evt);
+        };
 
         _vm.PropertyChanged += (_, e) =>
         {

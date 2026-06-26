@@ -146,6 +146,7 @@ public partial class EpgViewModel : BaseViewModel
     }
 
     public event EventHandler<EpgEvent>? AddTimerRequested;
+    public event EventHandler<EpgEvent>? AddAutoTimerRequested;
 
     public EpgViewModel(Enigma2Service api) => _api = api;
 
@@ -543,6 +544,14 @@ public partial class EpgViewModel : BaseViewModel
         AddTimerRequested?.Invoke(this, evt);
     }
 
+    [RelayCommand]
+    private void RequestAddAutoTimer(EpgEvent? evt)
+    {
+        if (evt == null) return;
+        CloseEpgDetail();   // dismiss detail popup if open
+        AddAutoTimerRequested?.Invoke(this, evt);
+    }
+
     // ── EPG Detail popup ─────────────────────────────────────────────
     [ObservableProperty] private EpgEvent? _selectedEventDetail;
 
@@ -779,7 +788,24 @@ public partial class TimersViewModel : BaseViewModel
     [ObservableProperty] private int _editAfterEvent = 3;
     [ObservableProperty] private bool _editEnabled = true;
 
+    // ── Channel picker (single-select — a recording timer always targets exactly
+    // one channel, unlike an AutoTimer rule) ──────────────────────────────────
+    [ObservableProperty] private bool _isChannelPickerOpen;
+    [ObservableProperty] private string _channelPickerSearch = "";
+    [ObservableProperty] private ObservableCollection<Service> _pickerBouquets = [];
+    [ObservableProperty] private Service? _pickerSelectedBouquet;
+    [ObservableProperty] private ObservableCollection<ChannelPickerEntry> _pickerChannels = [];
+    private readonly Dictionary<string, List<ChannelPickerEntry>> _pickerChannelsByBouquet = new();
+    private bool _pickerBouquetsLoaded;
+
     public TimersViewModel(Enigma2Service api) => _api = api;
+
+    partial void OnChannelPickerSearchChanged(string value) => RefreshPickerChannelsView();
+
+    async partial void OnPickerSelectedBouquetChanged(Service? value)
+    {
+        if (value != null) await SelectPickerBouquetAsync(value);
+    }
 
     [RelayCommand]
     public async Task LoadAsync()
@@ -936,6 +962,81 @@ public partial class TimersViewModel : BaseViewModel
             SelectedTimer = null;
             await LoadAsync();
         }, "Saving timer...");
+    }
+
+    // ── Channel picker ────────────────────────────────────────────────
+    [RelayCommand]
+    private async Task OpenChannelPickerAsync()
+    {
+        ChannelPickerSearch = "";
+        IsChannelPickerOpen = true;
+        if (_pickerBouquetsLoaded) return;
+
+        await RunAsync(async () =>
+        {
+            var bouquets = await _api.GetBouquetsAsync();
+            await OnUiAsync(() =>
+            {
+                PickerBouquets.Clear();
+                foreach (var b in bouquets.Where(b => b.IsBouquet))
+                    PickerBouquets.Add(b);
+            });
+            _pickerBouquetsLoaded = true;
+            if (PickerBouquets.Count > 0)
+                PickerSelectedBouquet = PickerBouquets[0];
+        }, "Loading channels...");
+    }
+
+    [RelayCommand]
+    private void CloseChannelPicker() => IsChannelPickerOpen = false;
+
+    private async Task SelectPickerBouquetAsync(Service bouquet)
+    {
+        if (_pickerChannelsByBouquet.TryGetValue(bouquet.ServiceReference, out var cached))
+        {
+            RefreshPickerChannelsView(cached);
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            var services = await _api.GetServicesAsync(bouquet.ServiceReference);
+            var entries = services
+                .Where(s => !s.IsBouquet)
+                .Select(s => new ChannelPickerEntry(s.ServiceReference, s.ServiceName)
+                {
+                    IsSelected = s.ServiceReference == EditServiceRef
+                })
+                .ToList();
+            _pickerChannelsByBouquet[bouquet.ServiceReference] = entries;
+            RefreshPickerChannelsView(entries);
+        }, "Loading channels...");
+    }
+
+    private void RefreshPickerChannelsView(List<ChannelPickerEntry>? entries = null)
+    {
+        entries ??= PickerSelectedBouquet != null &&
+                     _pickerChannelsByBouquet.TryGetValue(PickerSelectedBouquet.ServiceReference, out var cached)
+            ? cached
+            : [];
+
+        var filtered = string.IsNullOrWhiteSpace(ChannelPickerSearch)
+            ? entries
+            : entries.Where(e => e.Name.Contains(ChannelPickerSearch, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        PickerChannels.Clear();
+        foreach (var e in filtered) PickerChannels.Add(e);
+    }
+
+    // Single-select: picking a channel sets it directly and closes the dialog,
+    // unlike AutoTimer's checkbox-style multiselect — a recording timer only
+    // ever targets one channel, so there's no "Done" step needed here.
+    [RelayCommand]
+    private void SelectPickerChannel(ChannelPickerEntry entry)
+    {
+        EditServiceRef = entry.ServiceRef;
+        EditServiceName = entry.Name;
+        IsChannelPickerOpen = false;
     }
 }
 
@@ -1117,13 +1218,57 @@ public partial class AutoTimersViewModel : BaseViewModel
     [ObservableProperty] private int _editSearchCase;
     [ObservableProperty] private int _editJustPlay;
     [ObservableProperty] private int _editAvoidDuplicates;
-    [ObservableProperty] private string _editFrom = "";
-    [ObservableProperty] private string _editTo = "";
-    [ObservableProperty] private string _editServiceRef = "";
+    // The AutoTimer plugin treats an empty from/to as "no time restriction" — this
+    // toggle is the on/off switch for that, separate from the actual HH:mm values,
+    // so the TimePicker controls (which always show *some* time) don't force a
+    // restriction the user never asked for. When off, EditFrom/EditTo are kept
+    // empty regardless of whatever the pickers are currently showing.
+    [ObservableProperty] private bool _editTimeWindowEnabled;
+    [ObservableProperty] private string _editFrom = "20:00";
+    [ObservableProperty] private string _editTo = "23:00";
     [ObservableProperty] private int _editMaxDuration;
     private string _editId = "";
 
+    // Selected channels for the rule being edited. Empty means "all channels"
+    // (the AutoTimer plugin treats an omitted/empty services list that way).
+    // Backed by ChannelPickerEntry so the picker can show a checked state without
+    // a separate lookup, and EditServiceRefsSummary gives the edit form a single
+    // bindable line ("All channels" / "ARD HD" / "3 channels selected") without
+    // the view needing to know about the picker's internals.
+    public ObservableCollection<ChannelPickerEntry> EditServiceRefs { get; } = [];
+
+    public string EditServiceRefsSummary
+    {
+        get
+        {
+            if (EditServiceRefs.Count == 0) return "All channels";
+            return EditServiceRefs.Count == 1
+                ? EditServiceRefs[0].Name
+                : $"{EditServiceRefs.Count} channels selected";
+        }
+    }
+
+    // ── Channel picker (multiselect) ─────────────────────────────────
+    [ObservableProperty] private bool _isChannelPickerOpen;
+    [ObservableProperty] private string _channelPickerSearch = "";
+    [ObservableProperty] private ObservableCollection<Service> _pickerBouquets = [];
+    [ObservableProperty] private Service? _pickerSelectedBouquet;
+    [ObservableProperty] private ObservableCollection<ChannelPickerEntry> _pickerChannels = [];
+    private readonly Dictionary<string, List<ChannelPickerEntry>> _pickerChannelsByBouquet = new();
+    private bool _pickerBouquetsLoaded;
+
     public AutoTimersViewModel(Enigma2Service api) => _api = api;
+
+    partial void OnChannelPickerSearchChanged(string value) => RefreshPickerChannelsView();
+
+    // Fires when the bouquet ListBox's SelectedItem binding changes (user clicked a
+    // different bouquet), driving the same load path OpenChannelPickerAsync uses for
+    // the initial bouquet — this is the single place bouquet selection is handled,
+    // the XAML has no separate click handler for it.
+    async partial void OnPickerSelectedBouquetChanged(Service? value)
+    {
+        if (value != null) await SelectPickerBouquetAsync(value);
+    }
 
     [RelayCommand]
     public async Task LoadAsync()
@@ -1152,10 +1297,11 @@ public partial class AutoTimersViewModel : BaseViewModel
         EditSearchCase = timer.SearchCase;
         EditJustPlay = timer.JustPlay;
         EditAvoidDuplicates = timer.AvoidDuplicates;
-        EditFrom = timer.From;
-        EditTo = timer.To;
-        EditServiceRef = timer.ServiceRef;
+        EditTimeWindowEnabled = !string.IsNullOrWhiteSpace(timer.From) && !string.IsNullOrWhiteSpace(timer.To);
+        EditFrom = string.IsNullOrWhiteSpace(timer.From) ? "20:00" : timer.From;
+        EditTo = string.IsNullOrWhiteSpace(timer.To) ? "23:00" : timer.To;
         EditMaxDuration = timer.MaxDuration;
+        SetEditServiceRefs(timer.ServiceRefs, timer.ServiceNames);
         SelectedAutoTimer = timer;
         IsEditing = true;
     }
@@ -1171,12 +1317,49 @@ public partial class AutoTimersViewModel : BaseViewModel
         EditSearchCase = 0;
         EditJustPlay = 0;
         EditAvoidDuplicates = 0;
-        EditFrom = "";
-        EditTo = "";
-        EditServiceRef = "";
+        EditTimeWindowEnabled = false;
+        EditFrom = "20:00";
+        EditTo = "23:00";
         EditMaxDuration = 0;
+        SetEditServiceRefs([], []);
         SelectedAutoTimer = null;
         IsEditing = true;
+    }
+
+    // Opens the AutoTimer edit form prefilled from an EPG event, so a rule can be
+    // created straight from "this show, on this channel" instead of typing the
+    // match text and service reference by hand. The user still reviews/adjusts
+    // everything (e.g. loosen "Exact match" to "Contains" for a recurring show
+    // with slightly varying titles) and explicitly hits Save.
+    public void AddFromEpg(EpgEvent evt)
+    {
+        _editId = "";
+        EditName = evt.Title;
+        EditMatch = evt.Title;
+        EditEnabled = true;
+        EditSearchType = 1; // Exact match — the title is known precisely from EPG
+        EditSearchCase = 0;
+        EditJustPlay = 0;   // Record
+        EditAvoidDuplicates = 0;
+        EditTimeWindowEnabled = false;
+        EditFrom = "20:00";
+        EditTo = "23:00";
+        EditMaxDuration = 0;
+        SetEditServiceRefs([evt.ServiceRef], [evt.ServiceName]);
+        SelectedAutoTimer = null;
+        IsEditing = true;
+    }
+
+    private void SetEditServiceRefs(List<string> refs, List<string> names)
+    {
+        EditServiceRefs.Clear();
+        for (int i = 0; i < refs.Count; i++)
+        {
+            if (string.IsNullOrWhiteSpace(refs[i])) continue;
+            var name = i < names.Count && !string.IsNullOrWhiteSpace(names[i]) ? names[i] : refs[i];
+            EditServiceRefs.Add(new ChannelPickerEntry(refs[i], name));
+        }
+        OnPropertyChanged(nameof(EditServiceRefsSummary));
     }
 
     [RelayCommand]
@@ -1200,9 +1383,10 @@ public partial class AutoTimersViewModel : BaseViewModel
                 SearchCase = EditSearchCase,
                 JustPlay = EditJustPlay,
                 AvoidDuplicates = EditAvoidDuplicates,
-                From = EditFrom,
-                To = EditTo,
-                ServiceRef = EditServiceRef,
+                From = EditTimeWindowEnabled ? EditFrom : "",
+                To = EditTimeWindowEnabled ? EditTo : "",
+                ServiceRefs = EditServiceRefs.Select(c => c.ServiceRef).ToList(),
+                ServiceNames = EditServiceRefs.Select(c => c.Name).ToList(),
                 MaxDuration = EditMaxDuration,
             };
             await _api.SaveAutoTimerAsync(timer);
@@ -1230,5 +1414,135 @@ public partial class AutoTimersViewModel : BaseViewModel
     private async Task ParseEpgAsync()
     {
         await RunAsync(async () => await _api.ParseEpgForAutoTimersAsync(), "Parsing EPG...");
+    }
+
+    // ── Channel picker ────────────────────────────────────────────────
+    [RelayCommand]
+    private async Task OpenChannelPickerAsync()
+    {
+        ChannelPickerSearch = "";
+        IsChannelPickerOpen = true;
+        if (_pickerBouquetsLoaded) return;
+
+        await RunAsync(async () =>
+        {
+            var bouquets = await _api.GetBouquetsAsync();
+            await OnUiAsync(() =>
+            {
+                PickerBouquets.Clear();
+                foreach (var b in bouquets.Where(b => b.IsBouquet))
+                    PickerBouquets.Add(b);
+            });
+            _pickerBouquetsLoaded = true;
+            // Setting this triggers OnPickerSelectedBouquetChanged, which loads
+            // that bouquet's channels — no need to also call SelectPickerBouquetAsync
+            // here directly, that would just duplicate the (cached, so harmless but
+            // pointless) load.
+            if (PickerBouquets.Count > 0)
+                PickerSelectedBouquet = PickerBouquets[0];
+        }, "Loading channels...");
+    }
+
+    [RelayCommand]
+    private void CloseChannelPicker() => IsChannelPickerOpen = false;
+
+    private async Task SelectPickerBouquetAsync(Service bouquet)
+    {
+        if (_pickerChannelsByBouquet.TryGetValue(bouquet.ServiceReference, out var cached))
+        {
+            RefreshPickerChannelsView(cached);
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            var services = await _api.GetServicesAsync(bouquet.ServiceReference);
+            var selectedRefs = EditServiceRefs.Select(c => c.ServiceRef).ToHashSet();
+            var entries = services
+                .Where(s => !s.IsBouquet)
+                .Select(s => new ChannelPickerEntry(s.ServiceReference, s.ServiceName)
+                {
+                    IsSelected = selectedRefs.Contains(s.ServiceReference)
+                })
+                .ToList();
+            _pickerChannelsByBouquet[bouquet.ServiceReference] = entries;
+            RefreshPickerChannelsView(entries);
+        }, "Loading channels...");
+    }
+
+    private void RefreshPickerChannelsView(List<ChannelPickerEntry>? entries = null)
+    {
+        entries ??= PickerSelectedBouquet != null &&
+                     _pickerChannelsByBouquet.TryGetValue(PickerSelectedBouquet.ServiceReference, out var cached)
+            ? cached
+            : [];
+
+        var filtered = string.IsNullOrWhiteSpace(ChannelPickerSearch)
+            ? entries
+            : entries.Where(e => e.Name.Contains(ChannelPickerSearch, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        PickerChannels.Clear();
+        foreach (var e in filtered) PickerChannels.Add(e);
+    }
+
+    [RelayCommand]
+    private void TogglePickerChannel(ChannelPickerEntry entry)
+    {
+        entry.IsSelected = !entry.IsSelected;
+        if (entry.IsSelected)
+        {
+            if (!EditServiceRefs.Any(c => c.ServiceRef == entry.ServiceRef))
+                EditServiceRefs.Add(new ChannelPickerEntry(entry.ServiceRef, entry.Name));
+        }
+        else
+        {
+            var existing = EditServiceRefs.FirstOrDefault(c => c.ServiceRef == entry.ServiceRef);
+            if (existing != null) EditServiceRefs.Remove(existing);
+        }
+        OnPropertyChanged(nameof(EditServiceRefsSummary));
+    }
+
+    [RelayCommand]
+    private void RemoveSelectedChannel(ChannelPickerEntry entry)
+    {
+        EditServiceRefs.Remove(entry);
+        // The channel being removed might belong to a bouquet that isn't the one
+        // currently shown in the picker, so search every cached bouquet's entries
+        // rather than just PickerChannels.
+        foreach (var bouquetEntries in _pickerChannelsByBouquet.Values)
+        {
+            var match = bouquetEntries.FirstOrDefault(c => c.ServiceRef == entry.ServiceRef);
+            if (match != null) match.IsSelected = false;
+        }
+        OnPropertyChanged(nameof(EditServiceRefsSummary));
+    }
+
+    [RelayCommand]
+    private void ClearSelectedChannels()
+    {
+        EditServiceRefs.Clear();
+        // Reset checkbox state across every bouquet we've cached, not just the one
+        // currently shown — otherwise switching back to an earlier bouquet would
+        // still show its channels as checked even though they were cleared.
+        foreach (var bouquetEntries in _pickerChannelsByBouquet.Values)
+            foreach (var c in bouquetEntries) c.IsSelected = false;
+        OnPropertyChanged(nameof(EditServiceRefsSummary));
+    }
+}
+
+// A single selectable row in the channel picker, and also the row type used for
+// EditServiceRefs itself (the "chips" shown in the edit form) — both need exactly
+// (serviceref, display name, isSelected), so one type covers both jobs rather than
+// mapping between two near-identical classes.
+public partial class ChannelPickerEntry : ObservableObject
+{
+    public string ServiceRef { get; }
+    public string Name { get; }
+    [ObservableProperty] private bool _isSelected;
+
+    public ChannelPickerEntry(string serviceRef, string name)
+    {
+        ServiceRef = serviceRef;
+        Name = string.IsNullOrWhiteSpace(name) ? serviceRef : name;
     }
 }

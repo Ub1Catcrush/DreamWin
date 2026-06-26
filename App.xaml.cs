@@ -51,10 +51,14 @@ public partial class App : Application
         splash.SetStatus("Loading settings…");
         SettingsService = new SettingsService();
         Enigma2 = new Enigma2Service();
-        // Read version from FileVersionInfo — this reflects <Version> in DreamWin.csproj
-        // and is always accurate regardless of GenerateAssemblyInfo setting.
-        // Assembly.GetName().Version returns 0.0.0.0 when GenerateAssemblyInfo=false
-        // unless [assembly: AssemblyVersion(...)] is explicitly declared.
+        // Read version from FileVersionInfo. This now reflects version.properties:
+        // DreamWin.csproj parses version.properties into Version/AssemblyVersion/
+        // FileVersion/InformationalVersion at build time (CI's /p:Version=... still
+        // takes precedence when supplied), and GenerateAssemblyInfo is enabled so the
+        // SDK emits the corresponding assembly attributes automatically.
+        // Assembly.GetName().Version is intentionally avoided here since plain
+        // AssemblyVersion ("Major.Minor.Patch.0" via the 4-part scheme) doesn't carry
+        // the informational/file version suffixing the same way FileVersionInfo does.
         string appVersion;
         try
         {

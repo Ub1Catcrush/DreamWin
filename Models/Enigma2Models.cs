@@ -264,8 +264,30 @@ public class AutoTimer
     [JsonProperty("to")]
     public string To { get; set; } = "";
 
-    [JsonProperty("serviceref")]
-    public string ServiceRef { get; set; } = "";
+    // The AutoTimer plugin's real HTTP API (AutoTimerAddOrEditAutoTimerResource)
+    // accepts a "services" parameter holding a COMMA-SEPARATED LIST of service
+    // references — AutoTimer rules can legitimately restrict to multiple channels,
+    // confirmed against the plugin's source (services = get("services").split(',')).
+    // ServiceRefs is the source of truth; ServiceRef is kept only as a convenience
+    // accessor (first entry) for older call sites that only deal with one channel,
+    // e.g. picking a single channel from the EPG.
+    [JsonProperty("services")]
+    public List<string> ServiceRefs { get; set; } = [];
+
+    // Human-readable names matching ServiceRefs 1:1, populated when available
+    // (e.g. resolved against the live channel list) purely for display — not sent
+    // back to the API.
+    public List<string> ServiceNames { get; set; } = [];
+
+    public string ServiceRef
+    {
+        get => ServiceRefs.Count > 0 ? ServiceRefs[0] : "";
+        set
+        {
+            if (string.IsNullOrEmpty(value)) { ServiceRefs = []; return; }
+            ServiceRefs = [value];
+        }
+    }
 
     [JsonProperty("maxduration")]
     public int MaxDuration { get; set; }
@@ -276,6 +298,19 @@ public class AutoTimer
     public string SearchTypeText => SearchType switch { 0 => "Contains", 1 => "Exact", 2 => "Starts with", 3 => "Ends with", _ => "Contains" };
     public string JustPlayText => JustPlay == 1 ? "Zap" : "Record";
     public string StatusText => Enabled ? "Enabled" : "Disabled";
+
+    // "All channels" when empty, otherwise the resolved names if we have them,
+    // else falls back to showing how many/which raw service refs are set.
+    public string ServicesSummary
+    {
+        get
+        {
+            if (ServiceRefs.Count == 0) return "All channels";
+            if (ServiceNames.Count == ServiceRefs.Count && ServiceNames.Count > 0)
+                return string.Join(", ", ServiceNames);
+            return ServiceRefs.Count == 1 ? ServiceRefs[0] : $"{ServiceRefs.Count} channels";
+        }
+    }
 }
 
 public class AutoTimerList

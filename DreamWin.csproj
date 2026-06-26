@@ -7,11 +7,43 @@
     <UseWPF>true</UseWPF>
     <AssemblyName>DreamWin</AssemblyName>
     <RootNamespace>DreamWin</RootNamespace>
-    <Version>1.0.0</Version>
     <ApplicationIcon>dreamwin.ico</ApplicationIcon>
     <Authors>DreamWin</Authors>
     <Description>Enigma2 Windows Client</Description>
-    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <!--
+      GenerateAssemblyInfo is back on (default = true) so the SDK emits
+      AssemblyVersion/AssemblyFileVersion/AssemblyInformationalVersion for us
+      from the Version/AssemblyVersion/FileVersion properties below, instead
+      of those being hand-typed in Properties/AssemblyInfo.cs where they used
+      to drift out of sync with version.properties.
+    -->
+  </PropertyGroup>
+
+  <!--
+    version.properties is the single source of truth for the app version
+    (e.g. "version=[versionMajor:1, versionMinor:0, versionPatch:11]").
+    Parse it here so a plain `dotnet build`/`dotnet publish` or an F5 run in
+    Visual Studio picks up the real version with NO extra flags needed -
+    CI's `/p:Version=...` override still works too (MSBuild command-line
+    properties win over anything set in the project file), so both paths
+    agree.
+  -->
+  <PropertyGroup>
+    <_VersionPropsFile>$(MSBuildThisFileDirectory)version.properties</_VersionPropsFile>
+    <_VersionPropsContent Condition="Exists('$(_VersionPropsFile)')">$([System.IO.File]::ReadAllText('$(_VersionPropsFile)'))</_VersionPropsContent>
+    <_VMajor Condition="'$(_VersionPropsContent)' != ''">$([System.Text.RegularExpressions.Regex]::Match('$(_VersionPropsContent)', 'versionMajor:\s*(\d+)').Groups[1].Value)</_VMajor>
+    <_VMinor Condition="'$(_VersionPropsContent)' != ''">$([System.Text.RegularExpressions.Regex]::Match('$(_VersionPropsContent)', 'versionMinor:\s*(\d+)').Groups[1].Value)</_VMinor>
+    <_VPatch Condition="'$(_VersionPropsContent)' != ''">$([System.Text.RegularExpressions.Regex]::Match('$(_VersionPropsContent)', 'versionPatch:\s*(\d+)').Groups[1].Value)</_VPatch>
+    <_VMajor Condition="'$(_VMajor)' == ''">1</_VMajor>
+    <_VMinor Condition="'$(_VMinor)' == ''">0</_VMinor>
+    <_VPatch Condition="'$(_VPatch)' == ''">0</_VPatch>
+    <_VersionFromPropertiesFile>$(_VMajor).$(_VMinor).$(_VPatch)</_VersionFromPropertiesFile>
+
+    <!-- Only fall back to the parsed file version when nothing was passed on the command line (e.g. CI's /p:Version=...) -->
+    <Version Condition="'$(Version)' == ''">$(_VersionFromPropertiesFile)</Version>
+    <AssemblyVersion Condition="'$(AssemblyVersion)' == ''">$(Version)</AssemblyVersion>
+    <FileVersion Condition="'$(FileVersion)' == ''">$(Version)</FileVersion>
+    <InformationalVersion Condition="'$(InformationalVersion)' == ''">$(Version)</InformationalVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="LibVLCSharp.WPF" Version="3.9.0" />
