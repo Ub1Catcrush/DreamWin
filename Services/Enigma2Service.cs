@@ -791,8 +791,46 @@ public class Enigma2Service : IDisposable
     public string GetMovieStreamUrl(string filename)
     {
         if (_config == null) return "";
-        var encoded = HttpUtility.UrlEncode(filename).Replace("+", "%20");
-        return $"http://{_config.Host}:{_config.StreamingPort}/file?file={encoded}";
+        // HttpUtility.UrlEncode percent-encodes '/' to %2f (its IsUrlSafeChar allow-
+        // list is only alphanumerics plus - _ . ! * ( ) — confirmed against the
+        // actual .NET source). That broke recording playback entirely: encoding the
+        // whole path turned "/media/hdd/movie/F1/foo.ts" into
+        // "%2fmedia%2fhdd%2fmovie%2fF1%2ffoo.ts", and the receiver's path resolver
+        // doesn't handle that the same way as a literal slash (confirmed against a
+        // real receiver: the un-encoded-slash form works and seeks fine when opened
+        // directly in a browser/VLC; the %2f form returns "File ... not found").
+        // Fix: encode each path segment on its own (so spaces/umlauts/etc within a
+        // segment are still escaped) and rejoin with a literal '/', exactly how the
+        // receiver's own OpenWebif stream-URL generator does it server-side (Python's
+        // quote(), which also leaves '/' alone by default).
+        var encoded = string.Join("/", filename.Split('/').Select(segment =>
+            HttpUtility.UrlEncode(segment).Replace("+", "%20")));
+
+        // Recordings are served by OpenWebif's own /file endpoint (a plain static-
+        // file HTTP handler with proper Content-Length and Range support) on the
+        // WEB INTERFACE port (_config.Port, usually 80) — NOT on StreamingPort
+        // (8001), which is the dedicated live-TV service-reference streaming port
+        // and doesn't serve /file the same way. Using StreamingPort here was why
+        // libvlc reported Length=0 / a non-seekable stream for every recording:
+        // it was getting a live-stream-shaped response with no usable length, so
+        // every "seek" fell through to the slow restart fallback regardless of any
+        // TS-demuxer options.
+        // Plain http:// (not _config.BaseUrl's https-when-enabled logic) deliberately
+        // — same reasoning as GetStreamUrl above: libvlc's HTTP/TLS stack is separate
+        // from Enigma2Service's HttpClient and doesn't know about AcceptSelfSignedCert,
+        // so a self-signed webif HTTPS cert would break recording playback even though
+        // the rest of the app (API calls via HttpClient) handles it fine.
+        // Credentials embedded directly in the URL (http://user:pass@host:port/...)
+        // for the same underlying reason: the webif port can require Basic Auth (the
+        // live-TV streaming port commonly doesn't), and libvlc's HTTP stack doesn't
+        // see Enigma2Service's HttpClient.DefaultRequestHeaders.Authorization at all —
+        // without this, a password-protected receiver would 401 on every recording.
+        var auth = "";
+        if (!string.IsNullOrEmpty(_config.Username) && !string.IsNullOrEmpty(_config.Password))
+        {
+            auth = $"{Uri.EscapeDataString(_config.Username)}:{Uri.EscapeDataString(_config.Password)}@";
+        }
+        return $"http://{auth}{_config.Host}:{_config.Port}/file?file={encoded}";
     }
 
     // ─── Power / Remote ──────────────────────────────────────────────

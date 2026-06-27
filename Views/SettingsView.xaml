@@ -203,6 +203,175 @@
                 </StackPanel>
             </Border>
 
+            <!-- VLC Playback Section -->
+            <TextBlock Text="VLC PLAYBACK" FontSize="11" FontWeight="Bold"
+                       Foreground="{StaticResource TextMuted}" Margin="0,24,0,8"/>
+            <Border Background="{StaticResource BgPanel}" CornerRadius="10"
+                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="16,14" Margin="0,0,0,4">
+                <StackPanel>
+
+                    <TextBlock Text="Changes take effect after restarting playback (channel switch or re-open)."
+                               FontSize="11" Foreground="{StaticResource TextMuted}" Margin="0,0,0,14"
+                               TextWrapping="Wrap"/>
+
+                    <!-- Video Output -->
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="180"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                            <TextBlock Text="Video Output" FontSize="12" FontWeight="Medium"
+                                       Foreground="{StaticResource TextPrimary}"/>
+                            <TextBlock Text="Rendering backend" FontSize="10"
+                                       Foreground="{StaticResource TextMuted}"/>
+                        </StackPanel>
+                        <ComboBox Grid.Column="1" VerticalAlignment="Center"
+                                  Style="{StaticResource DarkComboBox}"
+                                  SelectedValue="{Binding Source={x:Static local:App.SettingsService}, Path=Settings.VlcVideoOutput, Mode=TwoWay}" SelectedValuePath="Tag"
+                                  SelectionChanged="VlcSettingChanged">
+                            <ComboBoxItem Content="Auto (recommended)" Tag="auto"/>
+                            <ComboBoxItem Content="Direct3D 11" Tag="direct3d11"/>
+                            <ComboBoxItem Content="OpenGL" Tag="opengl"/>
+                            <ComboBoxItem Content="DirectDraw (legacy)" Tag="directdraw"/>
+                        </ComboBox>
+                    </Grid>
+
+                    <!-- Hardware Acceleration -->
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="180"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                            <TextBlock Text="Hardware Acceleration" FontSize="12" FontWeight="Medium"
+                                       Foreground="{StaticResource TextPrimary}"/>
+                            <TextBlock Text="GPU-accelerated decoding" FontSize="10"
+                                       Foreground="{StaticResource TextMuted}"/>
+                        </StackPanel>
+                        <CheckBox Grid.Column="1" VerticalAlignment="Center"
+                                  IsChecked="{Binding Source={x:Static local:App.SettingsService}, Path=Settings.VlcHardwareAcceleration, Mode=TwoWay}"
+                                  Checked="VlcSettingChanged" Unchecked="VlcSettingChanged">
+                            <TextBlock Text="Enable (avcodec-hw=any)" FontSize="12"
+                                       Foreground="{StaticResource TextSecondary}"/>
+                        </CheckBox>
+                    </Grid>
+
+                    <!-- Network Cache -->
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="180"/>
+                            <ColumnDefinition Width="120"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                            <TextBlock Text="Network Cache" FontSize="12" FontWeight="Medium"
+                                       Foreground="{StaticResource TextPrimary}"/>
+                            <TextBlock Text="Live TV / IPTV buffer" FontSize="10"
+                                       Foreground="{StaticResource TextMuted}"/>
+                        </StackPanel>
+                        <TextBox Grid.Column="1" VerticalAlignment="Center"
+                                 Style="{StaticResource DarkTextBox}"
+                                 Text="{Binding Source={x:Static local:App.SettingsService}, Path=Settings.VlcNetworkCacheMs, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                 LostFocus="VlcSettingChanged"/>
+                        <TextBlock Grid.Column="2" Text="ms" VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextMuted}" Margin="8,0,0,0" FontSize="12"/>
+                    </Grid>
+
+                    <!-- File Cache -->
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="180"/>
+                            <ColumnDefinition Width="120"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                            <TextBlock Text="File Cache" FontSize="12" FontWeight="Medium"
+                                       Foreground="{StaticResource TextPrimary}"/>
+                            <TextBlock Text="Recordings playback buffer" FontSize="10"
+                                       Foreground="{StaticResource TextMuted}"/>
+                        </StackPanel>
+                        <TextBox Grid.Column="1" VerticalAlignment="Center"
+                                 Style="{StaticResource DarkTextBox}"
+                                 Text="{Binding Source={x:Static local:App.SettingsService}, Path=Settings.VlcFileCacheMs, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                 LostFocus="VlcSettingChanged"/>
+                        <TextBlock Grid.Column="2" Text="ms" VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextMuted}" Margin="8,0,0,0" FontSize="12"/>
+                    </Grid>
+
+                    <!-- TS Seek Accuracy (recordings only) -->
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="180"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                            <TextBlock Text="TS Seek Accuracy" FontSize="12" FontWeight="Medium"
+                                       Foreground="{StaticResource TextPrimary}"/>
+                            <TextBlock Text="Recording seek mitigation — try toggling if seeking stutters" FontSize="10"
+                                       Foreground="{StaticResource TextMuted}" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <CheckBox Grid.Column="1" VerticalAlignment="Center"
+                                  IsChecked="{Binding Source={x:Static local:App.SettingsService}, Path=Settings.VlcTsSeekOptions, Mode=TwoWay}"
+                                  Checked="VlcSettingChanged" Unchecked="VlcSettingChanged">
+                            <TextBlock Text="Enable (no-ts-trust-pcr + ts-seek-percent)" FontSize="12"
+                                       Foreground="{StaticResource TextSecondary}"/>
+                        </CheckBox>
+                    </Grid>
+
+                    <!-- Deinterlace -->
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="180"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                            <TextBlock Text="Deinterlace" FontSize="12" FontWeight="Medium"
+                                       Foreground="{StaticResource TextPrimary}"/>
+                            <TextBlock Text="For interlaced broadcast content" FontSize="10"
+                                       Foreground="{StaticResource TextMuted}"/>
+                        </StackPanel>
+                        <ComboBox Grid.Column="1" VerticalAlignment="Center"
+                                  Style="{StaticResource DarkComboBox}"
+                                  SelectedValue="{Binding Source={x:Static local:App.SettingsService}, Path=Settings.VlcDeinterlace, Mode=TwoWay}" SelectedValuePath="Tag"
+                                  SelectionChanged="VlcSettingChanged">
+                            <ComboBoxItem Content="Auto" Tag="auto"/>
+                            <ComboBoxItem Content="On" Tag="on"/>
+                            <ComboBoxItem Content="Off" Tag="off"/>
+                        </ComboBox>
+                    </Grid>
+
+                    <!-- Deinterlace Mode -->
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="180"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                            <TextBlock Text="Deinterlace Mode" FontSize="12" FontWeight="Medium"
+                                       Foreground="{StaticResource TextPrimary}"/>
+                            <TextBlock Text="Algorithm (when deinterlace ≠ Off)" FontSize="10"
+                                       Foreground="{StaticResource TextMuted}"/>
+                        </StackPanel>
+                        <ComboBox Grid.Column="1" VerticalAlignment="Center"
+                                  Style="{StaticResource DarkComboBox}"
+                                  SelectedValue="{Binding Source={x:Static local:App.SettingsService}, Path=Settings.VlcDeinterlaceMode, Mode=TwoWay}" SelectedValuePath="Tag"
+                                  SelectionChanged="VlcSettingChanged">
+                            <ComboBoxItem Content="Blend (default, fast)" Tag="blend"/>
+                            <ComboBoxItem Content="Bob" Tag="bob"/>
+                            <ComboBoxItem Content="Linear" Tag="linear"/>
+                            <ComboBoxItem Content="Mean" Tag="mean"/>
+                            <ComboBoxItem Content="Discard" Tag="discard"/>
+                            <ComboBoxItem Content="Yadif" Tag="yadif"/>
+                            <ComboBoxItem Content="Yadif 2x (best quality)" Tag="yadif2x"/>
+                            <ComboBoxItem Content="Phosphor" Tag="phosphor"/>
+                            <ComboBoxItem Content="IVTC (film)" Tag="ivtc"/>
+                        </ComboBox>
+                    </Grid>
+
+                </StackPanel>
+            </Border>
+
             <!-- Updates Section -->
             <TextBlock Text="UPDATES" FontSize="11" FontWeight="Bold"
                        Foreground="{StaticResource TextMuted}" Margin="0,24,0,8"/>

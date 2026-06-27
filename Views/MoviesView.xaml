@@ -235,6 +235,7 @@
                                 IsMoveToPointEnabled="True"
                                 Thumb.DragStarted="PositionSlider_DragStarted"
                                 Thumb.DragCompleted="PositionSlider_DragCompleted"
+                                PreviewMouseLeftButtonUp="PositionSlider_PreviewMouseLeftButtonUp"
                                 ValueChanged="PositionSlider_ValueChanged"/>
                         <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
                             <TextBlock Text="{Binding PositionText}" FontSize="10"

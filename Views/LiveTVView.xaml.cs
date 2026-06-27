@@ -51,7 +51,7 @@ public partial class LiveTVView : UserControl
 
         Debug.WriteLine("[LiveTVView] Initializing LibVLC");
         Core.Initialize();
-        _libVlc = new LibVLC("--no-video-title-show", "--network-caching=1000");
+        _libVlc = new LibVLC(App.SettingsService.Settings.BuildVlcArgs());
         _mediaPlayer = new MediaPlayer(_libVlc);
         VideoView.MediaPlayer = _mediaPlayer;
         _mediaPlayer.Playing += OnMediaPlayerPlaying;

@@ -22,10 +22,65 @@ public class AppSettings
     public DateTime LastUpdateCheckTime { get; set; } = DateTime.MinValue;
     public string? SkippedUpdateVersion { get; set; }
 
+    // VLC playback settings
+    public string VlcVideoOutput { get; set; } = "auto";       // auto | direct3d11 | opengl | directdraw
+    public bool VlcHardwareAcceleration { get; set; } = true;
+    public int VlcNetworkCacheMs { get; set; } = 1000;
+    public int VlcFileCacheMs { get; set; } = 300;
+    public string VlcDeinterlace { get; set; } = "auto";       // off | on | auto
+    public string VlcDeinterlaceMode { get; set; } = "blend";  // blend | bob | linear | mean | discard | yadif | yadif2x | phosphor | ivtc
+
+    // Applies :no-ts-trust-pcr and :ts-seek-percent to recording playback only
+    // (see MoviesView.ApplyTsSeekOptions). These are a documented VLC mitigation
+    // for inaccurate MPEG-TS seeking, but they change how the TS demuxer
+    // resyncs after a seek, which can help OR make resync stutter worse
+    // depending on the specific recording/encoder — exposed as a toggle so this
+    // can be A/B tested per-setup rather than guessed at and hardcoded.
+    public bool VlcTsSeekOptions { get; set; } = true;
+
     // Color scheme
     public string AccentColor { get; set; } = "#6C63FF";
     public string BgDeepColor { get; set; } = "#0F1117";
     public string BgPanelColor { get; set; } = "#1A1D27";
+
+    /// <summary>
+    /// Builds the LibVLC constructor argument list from the current VLC settings.
+    /// Call this once when initializing LibVLC.
+    /// </summary>
+    public string[] BuildVlcArgs()
+    {
+        var args = new System.Collections.Generic.List<string>
+        {
+            "--no-video-title-show",
+            $"--network-caching={VlcNetworkCacheMs}",
+            $"--file-caching={VlcFileCacheMs}",
+        };
+
+        // Video output module
+        if (VlcVideoOutput != "auto")
+            args.Add($"--vout={VlcVideoOutput}");
+
+        // Hardware acceleration (avcodec-hw)
+        args.Add(VlcHardwareAcceleration ? "--avcodec-hw=any" : "--avcodec-hw=none");
+
+        // Deinterlace
+        switch (VlcDeinterlace)
+        {
+            case "on":
+                args.Add("--deinterlace=1");
+                args.Add($"--deinterlace-mode={VlcDeinterlaceMode}");
+                break;
+            case "off":
+                args.Add("--deinterlace=-1");
+                break;
+            default: // "auto"
+                args.Add("--deinterlace=0");
+                args.Add($"--deinterlace-mode={VlcDeinterlaceMode}");
+                break;
+        }
+
+        return args.ToArray();
+    }
 
     public static readonly string SettingsPath =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),

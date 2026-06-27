@@ -773,6 +773,8 @@ public partial class EpgViewModel : BaseViewModel
 public partial class TimersViewModel : BaseViewModel
 {
     private readonly Enigma2Service _api;
+    private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
+    private DateTime _lastLoaded = DateTime.MinValue;
 
     [ObservableProperty] private ObservableCollection<Models.Timer> _timers = [];
     [ObservableProperty] private Models.Timer? _selectedTimer;
@@ -808,16 +810,31 @@ public partial class TimersViewModel : BaseViewModel
     }
 
     [RelayCommand]
-    public async Task LoadAsync()
+    public async Task LoadAsync(bool forceRefresh = false)
     {
+        // Skip the round trip if PrewarmAsync (called on connect) already populated
+        // Timers recently — without this, navigating to the Timers tab right after
+        // connecting would silently re-fetch the same list a second time.
+        if (!forceRefresh && DateTime.Now - _lastLoaded < CacheTtl && Timers.Count > 0)
+            return;
+
         await RunAsync(async () =>
         {
             var timers = await _api.GetTimersAsync();
             Timers.Clear();
             foreach (var t in timers.OrderBy(t => t.Begin))
                 Timers.Add(t);
+            _lastLoaded = DateTime.Now;
         }, "Loading timers...");
     }
+
+    // Background prefetch on connect — see EpgViewModel.PrewarmTodayAndTomorrowAsync
+    // for the rationale (silent, no RunAsync/IsBusy, the user hasn't opened this tab
+    // yet and may never need to see any loading state for it). Timers.Count == 0
+    // skip is implicit via LoadAsync's own cache guard above, but we still go through
+    // RunAsync (it sets IsBusy/StatusMessage on THIS view model only — harmless,
+    // since nothing is bound to this tab's IsBusy until the user actually opens it).
+    public Task PrewarmAsync() => LoadAsync();
 
     [RelayCommand]
     private async Task DeleteTimerAsync(Models.Timer timer)
@@ -1105,6 +1122,12 @@ public partial class MoviesViewModel : BaseViewModel
         }, "Loading recordings...");
     }
 
+    // Background prefetch on connect — see EpgViewModel.PrewarmTodayAndTomorrowAsync.
+    // LoadAsync's own CacheTtl guard above means this is a no-op if recordings were
+    // already loaded recently (e.g. a previous prewarm, or the user already visited
+    // this tab), so it's safe to call unconditionally on every connect.
+    public Task PrewarmAsync() => LoadAsync();
+
     private void RebuildFolderGroups(List<Movie> all)
     {
         // Remember which folder was expanded (if any) so a refresh doesn't collapse
@@ -1152,7 +1175,37 @@ public partial class MoviesViewModel : BaseViewModel
         CurrentStreamUrl = url;
         IsPlaying = true;
         IsPaused = false;
+        // Seed DurationText from the receiver's own recording metadata (movielist's
+        // "length" field, e.g. "19:37" or "112:58" — minutes:seconds, NOT h:mm:ss,
+        // so minutes can run past 59) rather than waiting on libvlc's own length
+        // detection. That detection is async over HTTP MPEG-TS and was observed to
+        // sometimes never complete (LengthChanged never firing, or firing with 0)
+        // even once playback was visibly running and seekable — so without this,
+        // the duration display was stuck at "0:00:00" indefinitely on some
+        // recordings. OnLengthChanged (MoviesView) still overwrites this if/when
+        // libvlc does determine its own length, since that reflects what the
+        // player itself can actually seek across.
+        DurationText = ParseServerLengthToDisplay(movie.Length);
+        Debug.WriteLine($"[MoviesViewModel] PlayMovie: movie.Length='{movie.Length}' -> DurationText='{DurationText}'");
         StreamRequested?.Invoke(this, url);
+    }
+
+    // Converts the receiver's "length" field — minutes:seconds, e.g. "19:37" or
+    // "112:58" for a near-2-hour recording — into the same "h:mm:ss" display format
+    // OnLengthChanged already uses, so the duration label doesn't visibly reformat
+    // itself if/when libvlc's own LengthChanged later overwrites it.
+    private static string ParseServerLengthToDisplay(string serverLength)
+    {
+        var parts = serverLength.Split(':');
+        if (parts.Length == 2 &&
+            int.TryParse(parts[0], out var totalMinutes) &&
+            int.TryParse(parts[1], out var seconds))
+        {
+            var hours = totalMinutes / 60;
+            var minutes = totalMinutes % 60;
+            return $"{hours}:{minutes:D2}:{seconds:D2}";
+        }
+        return "0:00:00";
     }
 
     [RelayCommand]
@@ -1169,11 +1222,15 @@ public partial class MoviesViewModel : BaseViewModel
         StopRequested?.Invoke(this, EventArgs.Empty);
     }
 
-    [RelayCommand]
-    private void SeekBack() { /* handled in view via media player */ }
+    /// Raised when the user requests a seek to an absolute position (seconds).
+    /// The View subscribes and calls SeekByRestart.
+    public event EventHandler<double>? SeekRequested;
 
     [RelayCommand]
-    private void SeekForward() { /* handled in view via media player */ }
+    private void SeekBack() => SeekRequested?.Invoke(this, -30);
+
+    [RelayCommand]
+    private void SeekForward() => SeekRequested?.Invoke(this, +30);
 
     [RelayCommand]
     private async Task DeleteMovieAsync(Movie? movie)
@@ -1204,6 +1261,8 @@ public partial class MoviesViewModel : BaseViewModel
 public partial class AutoTimersViewModel : BaseViewModel
 {
     private readonly Enigma2Service _api;
+    private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
+    private DateTime _lastLoaded = DateTime.MinValue;
 
     [ObservableProperty] private ObservableCollection<AutoTimer> _autoTimers = [];
     [ObservableProperty] private AutoTimer? _selectedAutoTimer;
@@ -1271,8 +1330,13 @@ public partial class AutoTimersViewModel : BaseViewModel
     }
 
     [RelayCommand]
-    public async Task LoadAsync()
+    public async Task LoadAsync(bool forceRefresh = false)
     {
+        // See TimersViewModel.LoadAsync — same reasoning: skip the round trip if
+        // PrewarmAsync already populated this recently.
+        if (!forceRefresh && DateTime.Now - _lastLoaded < CacheTtl && AutoTimers.Count > 0)
+            return;
+
         await RunAsync(async () =>
         {
             var timers = await _api.GetAutoTimersAsync();
@@ -1282,9 +1346,13 @@ public partial class AutoTimersViewModel : BaseViewModel
                 foreach (var t in timers.OrderBy(t => t.Name))
                     AutoTimers.Add(t);
             });
+            _lastLoaded = DateTime.Now;
         }, "Loading AutoTimers...");
         // If no timers and no error, plugin may not be installed
     }
+
+    // Background prefetch on connect — see EpgViewModel.PrewarmTodayAndTomorrowAsync.
+    public Task PrewarmAsync() => LoadAsync();
 
     [RelayCommand]
     private void EditAutoTimer(AutoTimer timer)

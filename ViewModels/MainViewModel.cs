@@ -122,12 +122,37 @@ public partial class MainViewModel : BaseViewModel
                 await LiveTV.LoadBouquetsAsync();
                 StartHealthMonitor();
 
-                // Warm the EPG grid cache for today/tomorrow in the background so the
-                // EPG tab renders instantly once the user actually navigates there,
-                // without delaying startup or showing any loading indicator for it.
+                // Warm EPG, recordings, timers and AutoTimers in the background so
+                // each tab renders instantly once the user actually navigates there,
+                // without delaying startup or showing any loading indicator for any
+                // of them. Each one is independent and best-effort — a slow/failed
+                // plugin or a large recordings list on one tab must not block or
+                // break warming the others, so each gets caught individually.
                 _ = Epg.PrewarmTodayAndTomorrowAsync();
+                _ = PrewarmSilentlyAsync(Movies.PrewarmAsync, "Movies");
+                _ = PrewarmSilentlyAsync(Timers.PrewarmAsync, "Timers");
+                _ = PrewarmSilentlyAsync(AutoTimers.PrewarmAsync, "AutoTimers");
             }
         }, "Connecting...");
+    }
+
+    // Wraps a tab's PrewarmAsync so one tab's failure (plugin not installed,
+    // timeout, whatever) can never throw out of the fire-and-forget call in
+    // ConnectAsync and skip warming the others. RunAsync inside each PrewarmAsync
+    // already swallows exceptions onto that sub-view-model's own HasError/
+    // StatusMessage (invisible until the user opens that tab), so this is just a
+    // last-resort net plus a debug log naming which tab it was, for anything that
+    // somehow escapes that.
+    private static async Task PrewarmSilentlyAsync(Func<Task> prewarm, string label)
+    {
+        try
+        {
+            await prewarm();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[MainViewModel] Prewarm failed for {label}: {ex.Message}");
+        }
     }
 
     [RelayCommand]
