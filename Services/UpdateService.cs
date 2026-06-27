@@ -17,8 +17,7 @@ public class GitHubRelease
 public class UpdateService
 {
     private const string GitHubOwner = "Ub1Catcrush";
-    private const string GitHubRepo = "DreamWin";
-    private const string GitHubApiUrl = $"https://api.github.com/repos/{GitHubOwner}/{GitHubRepo}/releases";
+    private const string GitHubRepo  = "DreamWin";
 
     private static readonly HttpClient _httpClient = new();
     private string _currentVersion;
@@ -46,62 +45,105 @@ public class UpdateService
         {
             UpdateProgressChanged?.Invoke(this, "Checking for updates...");
 
-            var response = await _httpClient.GetAsync(GitHubApiUrl);
-            response.EnsureSuccessStatusCode();
+            // /releases/latest is the most reliable endpoint for stable releases:
+            // it skips drafts and pre-releases automatically and returns a single
+            // object. We only fall back to the full list when the user wants
+            // pre-releases included.
+            string url = includePrerelease
+                ? $"https://api.github.com/repos/{GitHubOwner}/{GitHubRepo}/releases"
+                : $"https://api.github.com/repos/{GitHubOwner}/{GitHubRepo}/releases/latest";
 
-            var json = await response.Content.ReadAsStringAsync();
-            var releases = JArray.Parse(json);
+            var response = await _httpClient.GetAsync(url);
 
-            foreach (var releaseToken in releases)
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
-                var release = new GitHubRelease
-                {
-                    TagName = releaseToken["tag_name"]?.Value<string>() ?? "",
-                    Name = releaseToken["name"]?.Value<string>() ?? "",
-                    Prerelease = releaseToken["prerelease"]?.Value<bool>() ?? false,
-                    PublishedAt = DateTime.Parse(releaseToken["published_at"]?.Value<string>() ?? DateTime.Now.ToString())
-                };
-
-                // Skip prerelease if not wanted
-                if (release.Prerelease && !includePrerelease)
-                    continue;
-
-                // Look for installer asset (.exe or .msi)
-                var assets = releaseToken["assets"]?? new JArray();
-                foreach (var asset in assets)
-                {
-                    var assetName = asset["name"]?.Value<string>() ?? "";
-                    if (assetName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
-                        assetName.EndsWith(".msi", StringComparison.OrdinalIgnoreCase))
-                    {
-                        release.DownloadUrl = asset["browser_download_url"]?.Value<string>() ?? "";
-                        break;
-                    }
-                }
-
-                if (string.IsNullOrEmpty(release.DownloadUrl))
-                    continue;
-
-                // Compare release tag vs current version
-                Debug.WriteLine($"[UpdateService] tag='{release.TagName}' current='{_currentVersion}'");
-                if (IsNewerVersion(release.TagName, _currentVersion))
-                {
-                    Debug.WriteLine($"[UpdateService] UPDATE AVAILABLE: {release.TagName}");
-                    UpdateAvailable?.Invoke(this, $"New version available: {release.Name}");
-                    return release;
-                }
-
-                Debug.WriteLine($"[UpdateService] Already up to date (latest={release.TagName})");
+                Debug.WriteLine("[UpdateService] No releases found (404)");
                 return null;
             }
 
+            response.EnsureSuccessStatusCode();
+            var json = await response.Content.ReadAsStringAsync();
+
+            // Guard: GitHub API errors come back as {"message":"..."} not as release data
+            if (json.TrimStart().StartsWith("{\"message\""))
+            {
+                var apiMsg = JObject.Parse(json)["message"]?.Value<string>() ?? "unknown";
+                Debug.WriteLine($"[UpdateService] GitHub API error: {apiMsg}");
+                UpdateError?.Invoke(this, $"GitHub API error: {apiMsg}");
+                return null;
+            }
+
+            GitHubRelease? release = null;
+
+            if (includePrerelease)
+            {
+                // Full list — iterate until we find the first non-draft release
+                var releases = JArray.Parse(json);
+                foreach (var token in releases)
+                {
+                    if (token["draft"]?.Value<bool>() == true) continue;
+                    release = ParseRelease(token);
+                    break;
+                }
+            }
+            else
+            {
+                var token = JObject.Parse(json);
+                release = ParseRelease(token);
+            }
+
+            if (release == null || string.IsNullOrEmpty(release.TagName))
+            {
+                Debug.WriteLine("[UpdateService] No valid release found");
+                return null;
+            }
+
+            Debug.WriteLine($"[UpdateService] Latest='{release.TagName}' Current='{_currentVersion}'");
+
+            if (IsNewerVersion(release.TagName, _currentVersion))
+            {
+                Debug.WriteLine($"[UpdateService] UPDATE AVAILABLE: {release.TagName}");
+                UpdateAvailable?.Invoke(this, $"New version available: {release.Name}");
+                return release;
+            }
+
+            Debug.WriteLine($"[UpdateService] Already up to date");
             return null;
         }
         catch (Exception ex)
         {
+            Debug.WriteLine($"[UpdateService] CheckForUpdatesAsync error: {ex.Message}");
             UpdateError?.Invoke(this, $"Error checking for updates: {ex.Message}");
             return null;
         }
+    }
+
+    private GitHubRelease ParseRelease(JToken token)
+    {
+        var release = new GitHubRelease
+        {
+            TagName    = token["tag_name"]?.Value<string>() ?? "",
+            Name       = token["name"]?.Value<string>() ?? "",
+            Prerelease = token["prerelease"]?.Value<bool>() ?? false,
+            PublishedAt = DateTime.TryParse(
+                token["published_at"]?.Value<string>(), out var dt) ? dt : DateTime.Now,
+        };
+
+        foreach (var asset in token["assets"] ?? new JArray())
+        {
+            var name = asset["name"]?.Value<string>() ?? "";
+            if (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
+                name.EndsWith(".msi", StringComparison.OrdinalIgnoreCase))
+            {
+                release.DownloadUrl = asset["browser_download_url"]?.Value<string>() ?? "";
+                break;
+            }
+        }
+
+        if (string.IsNullOrEmpty(release.DownloadUrl))
+            release.DownloadUrl = token["html_url"]?.Value<string>() ?? "";
+
+        return release;
     }
 
     /// <summary>

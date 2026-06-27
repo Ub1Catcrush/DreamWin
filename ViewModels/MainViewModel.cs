@@ -220,6 +220,17 @@ public partial class MainViewModel : BaseViewModel
         if (LatestRelease == null)
             return;
 
+        // If the release has no installer asset, DownloadUrl is the GitHub
+        // release HTML page — open it in the browser instead of downloading.
+        if (LatestRelease.DownloadUrl.Contains("github.com") &&
+            !LatestRelease.DownloadUrl.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) &&
+            !LatestRelease.DownloadUrl.EndsWith(".msi", StringComparison.OrdinalIgnoreCase))
+        {
+            Process.Start(new ProcessStartInfo(LatestRelease.DownloadUrl) { UseShellExecute = true });
+            UpdateStatus = "Opened release page in browser";
+            return;
+        }
+
         await RunAsync(async () =>
         {
             var downloadPath = Path.Combine(
