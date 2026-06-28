@@ -29,6 +29,38 @@ public partial class LiveTVView : UserControl
 
     public static LiveTVView? Instance { get; private set; }
 
+    // ── Deinterlace ──────────────────────────────────────────────────
+    // Deinterlace MUST be applied via MediaPlayer.SetDeinterlace() at runtime,
+    // NOT via --deinterlace LibVLC init args. The init args only affect the global
+    // pipeline defaults for newly created LibVLC instances — they do NOT re-apply
+    // when settings change, and they don't reliably activate on per-media playback.
+    // SetDeinterlace() can be called at any time, including on a running stream,
+    // and takes effect immediately on the next decoded frame.
+    private void ApplyDeinterlace()
+    {
+        if (_mediaPlayer == null) return;
+        var s = App.SettingsService.Settings;
+        // LibVLCSharp 3.x: SetDeinterlace(string mode) — pass the filter name to
+        // enable, or null/"" to disable. "auto" is not a valid filter name; for auto
+        // we pass the configured mode and let VLC decide per-frame whether to apply it
+        // (VLC's own auto-detection runs on top of the active deinterlace filter).
+        string? filterName = s.VlcDeinterlace switch
+        {
+            "off"  => null,              // disable completely
+            "on"   => s.VlcDeinterlaceMode,   // force-enable with chosen algorithm
+            _      => s.VlcDeinterlaceMode,   // "auto" — set mode, VLC activates adaptively
+        };
+        try
+        {
+            _mediaPlayer.SetDeinterlace(filterName ?? "");
+            Debug.WriteLine($"[LiveTVView] Deinterlace applied: mode={s.VlcDeinterlace} filter={filterName ?? "off"}");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[LiveTVView] SetDeinterlace failed: {ex.Message}");
+        }
+    }
+
     /// <summary>
     /// Raised once after LibVLC has been initialized (or immediately, if it already was,
     /// for any subscriber that attaches late). Lets App.xaml.cs know precisely when the
@@ -58,6 +90,11 @@ public partial class LiveTVView : UserControl
         // ES/stream events: refresh audio track list when elementary streams are added/changed
         _mediaPlayer.ESAdded += OnMediaPlayerEsAdded;
         _mediaPlayer.MediaChanged += OnMediaPlayerMediaChanged;
+
+        // Re-apply deinterlace (and any other runtime-applicable VLC settings) immediately
+        // whenever the user changes them in Settings — no need to switch channels or restart.
+        App.SettingsService.VlcSettingsChanged += (_, _) => Dispatcher.InvokeAsync(ApplyDeinterlace);
+
         Debug.WriteLine("[LiveTVView] LibVLC initialized");
         VlcReady?.Invoke();
     }
@@ -315,6 +352,10 @@ public partial class LiveTVView : UserControl
         if (_mediaPlayer == null || _vm == null) return;
 
         Dispatcher.InvokeAsync(RefreshAudioTracks);
+
+        // Apply deinterlace settings as soon as the pipeline is active.
+        // Must be dispatched to UI thread since SetDeinterlace touches VLC's vout.
+        Dispatcher.InvokeAsync(ApplyDeinterlace);
 
         // Playing means VLC's pipeline has started, NOT that a frame has actually been
         // presented to the native video window yet — there's a further short gap during

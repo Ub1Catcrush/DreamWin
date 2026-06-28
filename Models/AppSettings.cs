@@ -66,21 +66,13 @@ public class AppSettings
         // Hardware acceleration (avcodec-hw)
         args.Add(VlcHardwareAcceleration ? "--avcodec-hw=any" : "--avcodec-hw=none");
 
-        // Deinterlace
-        switch (VlcDeinterlace)
-        {
-            case "on":
-                args.Add("--deinterlace=1");
-                args.Add($"--deinterlace-mode={VlcDeinterlaceMode}");
-                break;
-            case "off":
-                args.Add("--deinterlace=-1");
-                break;
-            default: // "auto"
-                args.Add("--deinterlace=0");
-                args.Add($"--deinterlace-mode={VlcDeinterlaceMode}");
-                break;
-        }
+        // NOTE: deinterlace is intentionally NOT set here as a LibVLC init arg.
+        // It is applied at runtime via MediaPlayer.SetDeinterlace() in LiveTVView
+        // after each stream starts playing — this is the correct API for per-session
+        // deinterlace control, works on running streams, and picks up settings changes
+        // immediately. Setting both --deinterlace here AND calling SetDeinterlace()
+        // later would cause a conflict between the global pipeline default and the
+        // per-session override.
 
         return args.ToArray();
     }

@@ -133,12 +133,13 @@ public partial class SettingsView : UserControl
         App.SettingsService.Settings.Save();
     }
 
-    // Saves VLC settings whenever any VLC control changes.
-    // The new settings take effect next time LibVLC is initialized
-    // (i.e. on the next channel switch or recording open).
+    // Saves VLC settings whenever any VLC control changes, then notifies all active
+    // media components so they can apply the new settings to any running stream immediately
+    // without needing to restart LibVLC or switch channels.
     private void VlcSettingChanged(object sender, RoutedEventArgs e)
     {
         App.SettingsService.Save();
+        App.SettingsService.NotifyVlcSettingsChanged();
     }
 
     private void ThemePresetClick(object sender, RoutedEventArgs e)

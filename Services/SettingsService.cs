@@ -8,6 +8,12 @@ public class SettingsService
 
     public AppSettings Settings => _settings;
     public event EventHandler<ReceiverConfig?>? ActiveReceiverChanged;
+    // Fired whenever VLC-relevant settings (deinterlace, hardware acceleration, etc.)
+    // are saved, so live components (LiveTVView, MoviesView) can apply changes to any
+    // running MediaPlayer without needing to restart LibVLC.
+    public event EventHandler? VlcSettingsChanged;
+
+    public void NotifyVlcSettingsChanged() => VlcSettingsChanged?.Invoke(this, EventArgs.Empty);
 
     public SettingsService()
     {
