@@ -5,7 +5,6 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DreamWin.Models;
 using DreamWin.Services;
-
 namespace DreamWin.ViewModels;
 
 public enum AppView { LiveTV, EPG, Timers, AutoTimers, Movies, Settings }
@@ -178,15 +177,28 @@ public partial class MainViewModel : BaseViewModel
         }
     }
 
-    [RelayCommand]
-    private async Task StandbyAsync()
+    // ── Power commands ───────────────────────────────────────────────────
+
+    [RelayCommand] private Task PowerStandbyAsync()     => ConfirmPowerAsync(5,  "Power_Confirm_Standby",     "Power_Confirm_Title");
+    [RelayCommand] private Task PowerDeepStandbyAsync() => ConfirmPowerAsync(1,  "Power_Confirm_DeepStandby", "Power_Confirm_Title");
+    [RelayCommand] private Task PowerRestartGUIAsync()  => ConfirmPowerAsync(3,  "Power_Confirm_RestartGUI",  "Power_Confirm_Title");
+    [RelayCommand] private Task PowerRebootAsync()      => ConfirmPowerAsync(2,  "Power_Confirm_Reboot",      "Power_Confirm_Title");
+    [RelayCommand] private Task PowerShutdownAsync()    => ConfirmPowerAsync(1,  "Power_Confirm_Shutdown",    "Power_Confirm_Title");
+
+    // Keep old name so existing XAML bindings don't break
+    [RelayCommand] private Task StandbyAsync() => PowerStandbyAsync();
+
+    private async Task ConfirmPowerAsync(int action, string msgKey, string titleKey)
     {
-        var result = System.Windows.MessageBox.Show(
-            $"Put '{ActiveReceiver?.Name}' into standby?\n\nThis will interrupt any running recordings.",
-            "Confirm Standby", System.Windows.MessageBoxButton.YesNo,
+        var loc  = LocalizationService.Instance;
+        var name = ActiveReceiver?.Name ?? "receiver";
+        var msg  = loc.Format(msgKey, name, "\n\n");
+        var title = loc[titleKey];
+        var r = System.Windows.MessageBox.Show(msg, title,
+            System.Windows.MessageBoxButton.YesNo,
             System.Windows.MessageBoxImage.Question);
-        if (result == System.Windows.MessageBoxResult.Yes)
-            await Api.PowerAsync(5);
+        if (r == System.Windows.MessageBoxResult.Yes)
+            await Api.PowerAsync(action);
     }
 
     [RelayCommand]

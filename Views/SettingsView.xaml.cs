@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using DreamWin.Models;
+using DreamWin.Services;
 using DreamWin.ViewModels;
 
 namespace DreamWin.Views;
@@ -118,6 +119,13 @@ public partial class SettingsView : UserControl
         FieldPassword.Password = "";
         FieldUseHttps.IsChecked = false;
         FieldAcceptSelfSigned.IsChecked = false;
+    }
+
+    private void LanguageChanged(object sender, SelectionChangedEventArgs e)
+    {
+        var lang = App.SettingsService.Settings.Language;
+        LocalizationService.Instance.Language = lang;
+        App.SettingsService.Save();
     }
 
     private void UpdateSettingChanged(object sender, RoutedEventArgs e)

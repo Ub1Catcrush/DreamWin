@@ -4,6 +4,7 @@
         xmlns:vlc="clr-namespace:LibVLCSharp.WPF;assembly=LibVLCSharp.WPF"
         xmlns:vm="clr-namespace:DreamWin.ViewModels"
         xmlns:views="clr-namespace:DreamWin.Views"
+        xmlns:svc="clr-namespace:DreamWin.Services"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="{Binding WindowTitle}"
         Icon="pack://application:,,,/dreamwin.ico"
@@ -229,9 +230,38 @@
                                            Foreground="{StaticResource TextPrimary}" Margin="4,0,0,2"/>
                                 <TextBlock Text="{Binding ActiveReceiver.Host, FallbackValue=''}"
                                            FontSize="10" Foreground="{StaticResource TextMuted}" Margin="4,0,0,6"/>
-                                <Button Content="⏻  Standby" Style="{StaticResource BaseButton}"
-                                        Command="{Binding StandbyCommand}" FontSize="11"
-                                        HorizontalAlignment="Stretch" Margin="0,0,0,6"/>
+                                <!-- Power menu button with dropdown -->
+                                <Grid Margin="0,0,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="28"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Button Grid.Column="0" Style="{StaticResource BaseButton}" FontSize="11"
+                                            Content="{Binding [Power_Standby], Source={x:Static svc:Loc.Instance}}"
+                                            Command="{Binding PowerStandbyCommand}"
+                                            HorizontalAlignment="Stretch" Margin="0,0,2,0"/>
+                                    <Button Grid.Column="1" Style="{StaticResource BaseButton}" FontSize="11"
+                                            Content="▾" ToolTip="More power options"
+                                            HorizontalAlignment="Stretch"
+                                            Click="PowerMenuButton_Click">
+                                        <Button.ContextMenu>
+                                            <ContextMenu DataContext="{Binding DataContext, RelativeSource={RelativeSource Self}}">
+                                                <MenuItem Header="{Binding [Power_Standby],     Source={x:Static svc:Loc.Instance}}"
+                                                          Command="{Binding PowerStandbyCommand}"/>
+                                                <MenuItem Header="{Binding [Power_DeepStandby], Source={x:Static svc:Loc.Instance}}"
+                                                          Command="{Binding PowerDeepStandbyCommand}"/>
+                                                <Separator/>
+                                                <MenuItem Header="{Binding [Power_RestartGUI],  Source={x:Static svc:Loc.Instance}}"
+                                                          Command="{Binding PowerRestartGUICommand}"/>
+                                                <MenuItem Header="{Binding [Power_Reboot],      Source={x:Static svc:Loc.Instance}}"
+                                                          Command="{Binding PowerRebootCommand}"/>
+                                                <Separator/>
+                                                <MenuItem Header="{Binding [Power_Shutdown],    Source={x:Static svc:Loc.Instance}}"
+                                                          Command="{Binding PowerShutdownCommand}"/>
+                                            </ContextMenu>
+                                        </Button.ContextMenu>
+                                    </Button>
+                                </Grid>
                                 <!-- Sleep timer -->
                                 <TextBlock Text="{Binding SleepTimerLabel}"
                                            FontSize="10" Foreground="{StaticResource Accent}"

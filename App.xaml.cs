@@ -50,6 +50,9 @@ public partial class App : Application
 
         splash.SetStatus("Loading settings…");
         SettingsService = new SettingsService();
+
+        // Apply saved language immediately so all XAML bindings use the right locale
+        LocalizationService.Instance.Language = SettingsService.Settings.Language;
         Enigma2 = new Enigma2Service();
         // Read version from FileVersionInfo. This now reflects version.properties:
         // DreamWin.csproj parses version.properties into Version/AssemblyVersion/

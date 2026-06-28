@@ -144,6 +144,17 @@ public partial class MainWindow : Window
             DragMove();
     }
 
+    private void PowerMenuButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.ContextMenu != null)
+        {
+            btn.ContextMenu.DataContext = DataContext;
+            btn.ContextMenu.PlacementTarget = btn;
+            btn.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            btn.ContextMenu.IsOpen = true;
+        }
+    }
+
     private void MinimizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
 
     private void MaximizeClick(object sender, RoutedEventArgs e)

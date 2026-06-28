@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+
+  <!-- Navigation / Tabs -->
+  <data name="Nav_LiveTV"><value>Live TV</value></data>
+  <data name="Nav_EPG"><value>EPG</value></data>
+  <data name="Nav_Timers"><value>Timer</value></data>
+  <data name="Nav_AutoTimers"><value>AutoTimer</value></data>
+  <data name="Nav_Recordings"><value>Aufnahmen</value></data>
+  <data name="Nav_Settings"><value>Einstellungen</value></data>
+
+  <!-- Power menu -->
+  <data name="Power_Standby"><value>⏻  Standby</value></data>
+  <data name="Power_DeepStandby"><value>⏼  Tief-Standby</value></data>
+  <data name="Power_RestartGUI"><value>↺  GUI Neustart</value></data>
+  <data name="Power_Reboot"><value>⟳  Neustart</value></data>
+  <data name="Power_Shutdown"><value>⏻  Ausschalten</value></data>
+  <data name="Power_Confirm_Standby"><value>'{0}' in Standby versetzen?</value></data>
+  <data name="Power_Confirm_DeepStandby"><value>'{0}' in Tief-Standby versetzen?{1}Der Receiver wird vollständig ausgeschaltet.</value></data>
+  <data name="Power_Confirm_RestartGUI"><value>Enigma2-Oberfläche auf '{0}' neu starten?</value></data>
+  <data name="Power_Confirm_Reboot"><value>'{0}' neu starten?{1}Laufende Aufnahmen werden unterbrochen.</value></data>
+  <data name="Power_Confirm_Shutdown"><value>'{0}' ausschalten?{1}Laufende Aufnahmen werden unterbrochen und der Receiver ausgeschaltet.</value></data>
+  <data name="Power_Confirm_Title"><value>Bestätigung</value></data>
+  <data name="Power_Warning_Recordings"><value>{0}Laufende Aufnahmen werden unterbrochen.</value></data>
+
+  <!-- Timers -->
+  <data name="Timers_Title"><value>Timer</value></data>
+  <data name="Timers_Refresh"><value>Aktualisieren</value></data>
+  <data name="Timers_Add"><value>Timer hinzufügen</value></data>
+  <data name="Timers_Delete_Confirm"><value>Timer '{0}' löschen?{1}Dies kann nicht rückgängig gemacht werden.</value></data>
+  <data name="Timers_Delete_Title"><value>Löschen bestätigen</value></data>
+  <data name="Timers_Loading"><value>Timer werden geladen...</value></data>
+  <data name="Timers_Empty"><value>Keine Timer geplant</value></data>
+
+  <!-- AutoTimers -->
+  <data name="AutoTimers_Title"><value>AutoTimer</value></data>
+  <data name="AutoTimers_Loading"><value>AutoTimer werden geladen...</value></data>
+  <data name="AutoTimers_Empty"><value>Keine AutoTimer konfiguriert</value></data>
+  <data name="AutoTimers_PluginMissing"><value>AutoTimer-Plugin nicht auf dem Receiver installiert</value></data>
+  <data name="AutoTimers_Delete_Confirm"><value>AutoTimer '{0}' löschen?</value></data>
+  <data name="AutoTimers_Delete_Title"><value>Löschen bestätigen</value></data>
+  <data name="AutoTimers_Save"><value>Speichern</value></data>
+  <data name="AutoTimers_Cancel"><value>Abbrechen</value></data>
+
+  <!-- Recordings -->
+  <data name="Recordings_Title"><value>Aufnahmen</value></data>
+  <data name="Recordings_Loading"><value>Aufnahmen werden geladen...</value></data>
+  <data name="Recordings_Empty"><value>Keine Aufnahmen gefunden</value></data>
+  <data name="Recordings_Delete_Confirm"><value>Aufnahme '{0}' löschen?{1}Dies kann nicht rückgängig gemacht werden.</value></data>
+  <data name="Recordings_Delete_Title"><value>Löschen bestätigen</value></data>
+  <data name="Recordings_Search"><value>Aufnahmen suchen...</value></data>
+
+  <!-- EPG -->
+  <data name="EPG_Title"><value>TV-Programm</value></data>
+  <data name="EPG_Loading"><value>Programmdaten werden geladen...</value></data>
+  <data name="EPG_NoData"><value>Keine Programmdaten verfügbar</value></data>
+  <data name="EPG_Now"><value>JETZT</value></data>
+  <data name="EPG_Next"><value>DANACH</value></data>
+  <data name="EPG_Record"><value>Aufnehmen</value></data>
+
+  <!-- Settings -->
+  <data name="Settings_Title"><value>Einstellungen</value></data>
+  <data name="Settings_Language"><value>Sprache</value></data>
+  <data name="Settings_Language_Desc"><value>Oberflächensprache (Neustart erforderlich)</value></data>
+  <data name="Settings_VLC"><value>VLC WIEDERGABE</value></data>
+  <data name="Settings_VLC_Hint"><value>Änderungen gelten nach dem nächsten Wiedergabestart (Kanalwechsel oder erneutes Öffnen).</value></data>
+  <data name="Settings_VLC_VideoOutput"><value>Videoausgabe</value></data>
+  <data name="Settings_VLC_VideoOutput_Desc"><value>Renderingbackend</value></data>
+  <data name="Settings_VLC_HWAccel"><value>Hardwarebeschleunigung</value></data>
+  <data name="Settings_VLC_HWAccel_Desc"><value>GPU-beschleunigtes Dekodieren</value></data>
+  <data name="Settings_VLC_HWAccel_Label"><value>Aktivieren (avcodec-hw=any)</value></data>
+  <data name="Settings_VLC_NetworkCache"><value>Netzwerk-Cache</value></data>
+  <data name="Settings_VLC_NetworkCache_Desc"><value>Live TV / IPTV-Puffer</value></data>
+  <data name="Settings_VLC_FileCache"><value>Datei-Cache</value></data>
+  <data name="Settings_VLC_FileCache_Desc"><value>Puffer für Aufnahmenwiedergabe</value></data>
+  <data name="Settings_VLC_Deinterlace"><value>Deinterlace</value></data>
+  <data name="Settings_VLC_Deinterlace_Desc"><value>Für interlaced Sendeinhalt</value></data>
+  <data name="Settings_VLC_DeinterlaceMode"><value>Deinterlace-Modus</value></data>
+  <data name="Settings_VLC_DeinterlaceMode_Desc"><value>Algorithmus (wenn Deinterlace ≠ Aus)</value></data>
+  <data name="Settings_Updates"><value>UPDATES</value></data>
+  <data name="Settings_CheckUpdates"><value>Nach Updates suchen</value></data>
+  <data name="Settings_CheckAuto"><value>Automatisch nach Updates suchen</value></data>
+  <data name="Settings_IncludePrerelease"><value>Vorabversionen einschließen</value></data>
+  <data name="Settings_About"><value>ÜBER</value></data>
+
+  <!-- Live TV / Teletext -->
+  <data name="LiveTV_Teletext"><value>Videotext</value></data>
+  <data name="LiveTV_Teletext_Page"><value>Seite</value></data>
+  <data name="LiveTV_Teletext_On"><value>Videotext aktivieren</value></data>
+  <data name="LiveTV_Teletext_Off"><value>Videotext deaktivieren</value></data>
+  <data name="LiveTV_Teletext_Home"><value>Start (S.100)</value></data>
+  <data name="LiveTV_Teletext_Red"><value>Rot</value></data>
+  <data name="LiveTV_Teletext_Green"><value>Grün</value></data>
+  <data name="LiveTV_Teletext_Yellow"><value>Gelb</value></data>
+  <data name="LiveTV_Teletext_Blue"><value>Blau</value></data>
+  <data name="LiveTV_AudioTracks"><value>Audiospuren</value></data>
+  <data name="LiveTV_NoStream"><value>Kanal auswählen, um die Wiedergabe zu starten</value></data>
+
+  <!-- General -->
+  <data name="General_Yes"><value>Ja</value></data>
+  <data name="General_No"><value>Nein</value></data>
+  <data name="General_OK"><value>OK</value></data>
+  <data name="General_Cancel"><value>Abbrechen</value></data>
+  <data name="General_Close"><value>Schließen</value></data>
+  <data name="General_Save"><value>Speichern</value></data>
+  <data name="General_Delete"><value>Löschen</value></data>
+  <data name="General_Refresh"><value>Aktualisieren</value></data>
+  <data name="General_Search"><value>Suchen</value></data>
+  <data name="General_Loading"><value>Wird geladen...</value></data>
+  <data name="General_Error"><value>Fehler</value></data>
+  <data name="General_Channels"><value>SENDER</value></data>
+  <data name="General_Sleep"><value>Schlaf:</value></data>
+  <data name="General_Connected"><value>Verbunden mit {0}</value></data>
+  <data name="General_Disconnected"><value>Nicht verbunden</value></data>
+  <data name="General_Connecting"><value>Verbinde...</value></data>
+</root>

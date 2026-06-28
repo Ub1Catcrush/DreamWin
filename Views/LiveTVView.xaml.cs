@@ -401,6 +401,9 @@ public partial class LiveTVView : UserControl
     {
         if (_libVlc == null || _mediaPlayer == null || string.IsNullOrEmpty(url)) return;
 
+        // Close teletext when switching channels
+        if (_teletextActive) Dispatcher.InvokeAsync(CloseTeletext);
+
         // Mask the video surface immediately. The actual VLC render surface is a
         // native child window (see the ChannelSwitchMask comment in XAML) that briefly
         // shows its own blank/white background between the old stream's last frame and
@@ -454,6 +457,70 @@ public partial class LiveTVView : UserControl
 
     // Called from MainWindow's low-level mouse hook to check whether a screen-space
     // point lands inside the video rendering surface, for double-click detection.
+    // ── Teletext ─────────────────────────────────────────────────────────
+
+    private bool _teletextActive;
+    private int  _teletextPage = 100;
+
+    private void TeletextToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (_teletextActive) CloseTeletext();
+        else                 OpenTeletext();
+    }
+
+    private void OpenTeletext()
+    {
+        if (_mediaPlayer == null) return;
+        _teletextActive = true;
+        // Setting Teletext to a page number activates teletext rendering in VLC
+        _mediaPlayer.Teletext = _teletextPage;
+        TeletextBar.Visibility = Visibility.Visible;
+        TeletextPageBox.Text = _teletextPage.ToString();
+        TeletextToggleBtn.Foreground = FindResource("Accent") as System.Windows.Media.Brush;
+    }
+
+    private void CloseTeletext()
+    {
+        if (_mediaPlayer == null) return;
+        _teletextActive = false;
+        // Setting Teletext to 0 deactivates teletext
+        _mediaPlayer.Teletext = 0;
+        TeletextBar.Visibility = Visibility.Collapsed;
+        TeletextToggleBtn.ClearValue(ForegroundProperty);
+    }
+
+    private void SeekTeletextPage(int page)
+    {
+        _teletextPage = Math.Clamp(page, 100, 899);
+        TeletextPageBox.Text = _teletextPage.ToString();
+        if (_mediaPlayer != null) _mediaPlayer.Teletext = _teletextPage;
+    }
+
+    private void TeletextGoPage_Click(object sender, RoutedEventArgs e)
+    {
+        if (int.TryParse(TeletextPageBox.Text, out var p)) SeekTeletextPage(p);
+    }
+
+    private void TeletextPageBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == System.Windows.Input.Key.Enter)
+        {
+            if (int.TryParse(TeletextPageBox.Text, out var p)) SeekTeletextPage(p);
+            e.Handled = true;
+        }
+    }
+
+    private void TeletextHome_Click  (object sender, RoutedEventArgs e) => SeekTeletextPage(100);
+    private void TeletextPrev_Click  (object sender, RoutedEventArgs e) => SeekTeletextPage(_teletextPage - 1 < 100 ? 899 : _teletextPage - 1);
+    private void TeletextNext_Click  (object sender, RoutedEventArgs e) => SeekTeletextPage(_teletextPage + 1 > 899 ? 100 : _teletextPage + 1);
+    private void TeletextClose_Click (object sender, RoutedEventArgs e) => CloseTeletext();
+
+    // Fastext colour buttons — use VLC's TeletextKey enum values
+    private void TeletextRed_Click   (object sender, RoutedEventArgs e) { if (_mediaPlayer != null) _mediaPlayer.Teletext = (int)LibVLCSharp.Shared.TeletextKey.Red; }
+    private void TeletextGreen_Click (object sender, RoutedEventArgs e) { if (_mediaPlayer != null) _mediaPlayer.Teletext = (int)LibVLCSharp.Shared.TeletextKey.Green; }
+    private void TeletextYellow_Click(object sender, RoutedEventArgs e) { if (_mediaPlayer != null) _mediaPlayer.Teletext = (int)LibVLCSharp.Shared.TeletextKey.Yellow; }
+    private void TeletextBlue_Click  (object sender, RoutedEventArgs e) { if (_mediaPlayer != null) _mediaPlayer.Teletext = (int)LibVLCSharp.Shared.TeletextKey.Blue; }
+
     public bool IsScreenPointInVideo(System.Windows.Point screenPt)
     {
         try

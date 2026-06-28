@@ -22,6 +22,9 @@ public class AppSettings
     public DateTime LastUpdateCheckTime { get; set; } = DateTime.MinValue;
     public string? SkippedUpdateVersion { get; set; }
 
+    // UI Language (ISO 639-1 code: "en", "de", ...)
+    public string Language { get; set; } = "en";
+
     // VLC playback settings
     public string VlcVideoOutput { get; set; } = "auto";       // auto | direct3d11 | opengl | directdraw
     public bool VlcHardwareAcceleration { get; set; } = true;
