@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.Versioning;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -131,8 +132,9 @@ public partial class LiveTVView : UserControl
     {
         // Enforce single stream: stop recordings player if running
         MoviesView.Instance?.StopPlayback();
-        // Prevent double-starting the same stream
-        if (_mediaPlayer?.IsPlaying == true && _mediaPlayer.Media?.Mrl == url) return;
+        // Ignore if we're already playing this exact URL (prevents double-start on
+        // rapid repeated clicks on the same channel)
+        if (_mediaPlayer?.Media?.Mrl == url && _mediaPlayer?.IsPlaying == true) return;
         PlayStream(url);
     }
 
@@ -438,32 +440,38 @@ public partial class LiveTVView : UserControl
                 }
             }
 
+    // Guards against rapid channel switches corrupting VLC's internal state.
+    private int _playSerial;
+
     public void PlayStream(string url)
     {
         if (_libVlc == null || _mediaPlayer == null || string.IsNullOrEmpty(url)) return;
 
-        // Close teletext when switching channels
+        var serial = Interlocked.Increment(ref _playSerial);
+
         if (_teletextActive) Dispatcher.InvokeAsync(CloseTeletext);
 
-        // Mask the video surface immediately. The actual VLC render surface is a
-        // native child window (see the ChannelSwitchMask comment in XAML) that briefly
-        // shows its own blank/white background between the old stream's last frame and
-        // the new stream's first one — this WPF-level overlay covers that gap.
         ShowChannelSwitchMask();
 
         try
         {
-            // NOTE: deliberately NOT calling _mediaPlayer.Stop() here first. Stop()
-            // immediately clears the native video surface back to its blank state,
-            // which is what produced the white flash in the first place — Play() with
-            // a new Media handles tearing down the previous stream internally without
-            // that extra blank step, and is the standard way to switch streams in VLC.
+            var settings = App.SettingsService.Settings;
             var media = new Media(_libVlc, new Uri(url));
-            // Add VLC options to reduce startup flash: disable video title and deinterlace
             media.AddOption(":no-video-title-show");
-            media.AddOption(":network-caching=800");
+            media.AddOption($":network-caching={settings.VlcNetworkCacheMs}");
+
+            // Bail out if a newer switch already came in while we were setting up
+            if (serial != _playSerial)
+            {
+                media.Dispose();
+                HideChannelSwitchMask();
+                return;
+            }
+
             _mediaPlayer.Play(media);
-            media.Dispose(); // VLC retains its own reference
+            // Do NOT dispose media immediately — VLC still holds an internal reference.
+            // Disposing here causes use-after-free crashes on some streams.
+            // The GC will collect it once VLC replaces it with the next Media.
 
             if (_vm != null)
             {
@@ -479,7 +487,7 @@ public partial class LiveTVView : UserControl
 
         _ = Task.Run(async () =>
         {
-            await Task.Delay(800);
+            await Task.Delay(600);
             _ = Dispatcher.InvokeAsync(RefreshAudioTracks);
             await Task.Delay(1500);
             _ = Dispatcher.InvokeAsync(RefreshAudioTracks);

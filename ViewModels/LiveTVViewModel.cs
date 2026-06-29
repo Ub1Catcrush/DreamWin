@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DreamWin.Models;
@@ -117,6 +119,9 @@ public partial class LiveTVViewModel : BaseViewModel
         }
     }
 
+    // Cancels any in-flight channel switch so rapid clicks only act on the last one
+    private CancellationTokenSource? _switchCts;
+
     [RelayCommand]
     private async Task SelectServiceAsync(Service service)
     {
@@ -126,23 +131,36 @@ public partial class LiveTVViewModel : BaseViewModel
 
     private async Task PlayServiceAsync(Service service)
     {
-        await RunAsync(async () =>
-        {
-            // Get current EPG
-            var epgEvents = await _api.GetEpgNowAsync(service.ServiceReference);
-            var now = epgEvents.FirstOrDefault(e => e.IsCurrentlyAiring);
-            var next = epgEvents.FirstOrDefault(e => e.BeginTime > DateTime.Now);
-            CurrentEvent = now;
-            NextEvent = next;
+        // Cancel previous switch — only the most recent click wins
+        _switchCts?.Cancel();
+        _switchCts = new CancellationTokenSource();
+        var ct = _switchCts.Token;
 
-            // Get stream URL and trigger playback
-            var url = _api.GetStreamUrl(service.ServiceReference);
-            CurrentStreamUrl = url;
-            IsPlaying = true;
-            StreamingService = service;
-            StreamRequested?.Invoke(this, url);
-            StartSignalPolling();
-        });
+        // ── Step 1: fire stream immediately (no EPG wait) ───────────────
+        var url = _api.GetStreamUrl(service.ServiceReference);
+        CurrentStreamUrl = url;
+        IsPlaying = true;
+        StreamingService = service;
+        CurrentEvent = null;
+        NextEvent = null;
+        StreamRequested?.Invoke(this, url);
+        StartSignalPolling();
+
+        if (ct.IsCancellationRequested) return;
+
+        // ── Step 2: load EPG in background, don't block stream start ────
+        try
+        {
+            var epgEvents = await _api.GetEpgNowAsync(service.ServiceReference);
+            if (ct.IsCancellationRequested) return;
+
+            CurrentEvent = epgEvents.FirstOrDefault(e => e.IsCurrentlyAiring);
+            NextEvent    = epgEvents.FirstOrDefault(e => e.BeginTime > DateTime.Now);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[LiveTV] EPG load failed for {service.ServiceName}: {ex.Message}");
+        }
     }
 
     [RelayCommand]
